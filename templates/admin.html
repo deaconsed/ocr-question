@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - CBT Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        .admin-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            padding: 30px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: var(--bg-element);
+            color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        .video-selector-card, .user-manager-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: var(--glass-blur);
+        }
+
+        .video-selector-card {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .terminal-container {
+            flex: 1;
+            background: #000;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #10b981;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .terminal-line { margin-bottom: 4px; line-height: 1.4; }
+        .terminal-line.error { color: #ef4444; }
+        .terminal-line.success { color: #3b82f6; }
+        .terminal-line.header { color: #f59e0b; font-weight: bold; }
+
+        /* User Management Styles */
+        .user-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .user-table th, .user-table td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .user-table th { color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; }
+
+        .add-user-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 15px;
+            align-items: end;
+        }
+
+        .form-group { display: flex; flex-direction: column; gap: 8px; }
+        .form-group label { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
+        
+        .role-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .role-admin { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+        .role-verifier { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+        .role-teacher { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <div class="header-actions">
+            <h2>Admin Dashboard</h2>
+            <a href="/" class="btn btn-secondary" style="text-decoration: none;">← Back to Verification</a>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="pipeline">Pipeline Orchestrator</button>
+            <button class="tab-btn" data-tab="users">User Management</button>
+        </div>
+
+        <!-- Pipeline Tab -->
+        <div class="tab-content active" id="tab-pipeline">
+            <div class="video-selector-card">
+                <div style="flex: 2;">
+                    <label for="video-select" style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">SELECT VIDEO FROM FOLDER</label>
+                    <select id="video-select">
+                        <option value="" disabled selected>Loading videos...</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label for="video-year" style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">EXAM YEAR</label>
+                    <input type="number" id="video-year" value="2024" min="2000" max="2100" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-element); color: white;">
+                </div>
+                <button id="btn-process" class="btn btn-primary" style="padding: 10px 24px; font-size: 1rem; margin-top: 22px;">Start Processing</button>
+                <button id="btn-stop" class="btn btn-secondary" style="padding: 10px 24px; font-size: 1rem; margin-top: 22px; display: none; background-color: #ef4444; color: white; border-color: #ef4444;">Stop Process</button>
+            </div>
+
+            <div class="terminal-container" id="terminal">
+                <div class="terminal-line" style="color: var(--text-muted);">Waiting for pipeline to start...</div>
+            </div>
+        </div>
+
+        <!-- Users Tab -->
+        <div class="tab-content" id="tab-users">
+            <div class="user-manager-card">
+                <h3>Add New User</h3>
+                <div class="add-user-form">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="new-username" placeholder="Enter username...">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="new-password" placeholder="Enter password...">
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="new-role">
+                            <option value="verifier">Verifier</option>
+                            <option value="teacher">Teacher</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <button id="btn-add-user" class="btn btn-primary">Create User</button>
+                </div>
+            </div>
+
+            <div class="user-manager-card" style="flex: 1; overflow-y: auto;">
+                <h3>System Users</h3>
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Created At</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table-body">
+                        <!-- Users will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Tab Switching
+            const tabButtons = document.querySelectorAll('.tab-btn');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            tabButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const targetTab = btn.dataset.tab;
+                    tabButtons.forEach(b => b.classList.remove('active'));
+                    tabContents.forEach(c => c.classList.remove('active'));
+                    btn.classList.add('active');
+                    document.getElementById(`tab-${targetTab}`).classList.add('active');
+                    
+                    if (targetTab === 'users') fetchUsers();
+                });
+            });
+
+            // Pipeline Logic (Existing)
+            const videoSelect = document.getElementById('video-select');
+            const btnProcess = document.getElementById('btn-process');
+            const btnStop = document.getElementById('btn-stop');
+            const terminal = document.getElementById('terminal');
+            let isRunning = false;
+
+            function fetchStatus() {
+                fetch('/api/videos')
+                    .then(res => res.json())
+                    .then(data => {
+                        videoSelect.innerHTML = '<option value="" disabled selected>Select a video to process...</option>';
+                        data.videos.forEach(v => {
+                            const opt = document.createElement('option');
+                            opt.value = v; opt.textContent = v;
+                            videoSelect.appendChild(opt);
+                        });
+                        isRunning = data.is_running;
+                        if (isRunning) { setUIRunning(true); startLogStream(); }
+                        else { setUIRunning(false); }
+                    });
+            }
+            fetchStatus();
+
+            function setUIRunning(running) {
+                if (running) {
+                    btnProcess.style.display = 'none';
+                    btnStop.style.display = 'block';
+                    btnStop.disabled = false;
+                    videoSelect.disabled = true;
+                } else {
+                    btnProcess.style.display = 'block';
+                    btnProcess.disabled = false;
+                    btnProcess.textContent = "Start Processing";
+                    btnStop.style.display = 'none';
+                    videoSelect.disabled = false;
+                }
+            }
+
+            function appendLog(msg) {
+                const line = document.createElement('div');
+                line.className = 'terminal-line';
+                if (msg.includes('Error') || msg.includes('Fail')) line.classList.add('error');
+                else if (msg.includes('Success') || msg.includes('Extracted')) line.classList.add('success');
+                else if (msg.includes('===')) line.classList.add('header');
+                line.textContent = msg;
+                terminal.appendChild(line);
+                terminal.scrollTop = terminal.scrollHeight;
+            }
+
+            let evtSource = null;
+            function startLogStream() {
+                if (evtSource) return;
+                terminal.innerHTML = '';
+                appendLog("Connecting to pipeline stream...");
+                evtSource = new EventSource('/api/stream_progress');
+                evtSource.onmessage = function(e) {
+                    appendLog(e.data);
+                    if (e.data.includes('Pipeline Complete!') || e.data.includes('Pipeline Stopped')) {
+                        evtSource.close(); evtSource = null;
+                        isRunning = false; setUIRunning(false);
+                    }
+                };
+                evtSource.onerror = function() {
+                    appendLog("Stream disconnected.");
+                    evtSource.close(); evtSource = null;
+                };
+            }
+
+            btnProcess.addEventListener('click', () => {
+                const videoPath = videoSelect.value;
+                const year = document.getElementById('video-year').value;
+                
+                if (!videoPath) { alert("Please select a video first."); return; }
+                if (!year) { alert("Please specify the exam year."); return; }
+
+                btnProcess.disabled = true; btnProcess.textContent = "Starting...";
+                videoSelect.disabled = true;
+                fetch('/api/process_video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ video_path: videoPath, year: parseInt(year) })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) { setUIRunning(true); startLogStream(); }
+                    else { alert(data.error); setUIRunning(false); }
+                })
+                .catch(err => { alert("Network error."); setUIRunning(false); });
+            });
+
+            btnStop.addEventListener('click', () => {
+                if (!confirm("Are you sure you want to stop the processing?")) return;
+                btnStop.disabled = true; btnStop.textContent = "Stopping...";
+                fetch('/api/stop_video', { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.success) { alert(data.error); btnStop.disabled = false; btnStop.textContent = "Stop Process"; }
+                });
+            });
+
+            // User Management Logic
+            const usersTableBody = document.getElementById('users-table-body');
+            const btnAddUser = document.getElementById('btn-add-user');
+
+            function fetchUsers() {
+                fetch('/api/users')
+                    .then(res => res.json())
+                    .then(users => {
+                        usersTableBody.innerHTML = '';
+                        users.forEach(user => {
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td><strong>${user.username}</strong></td>
+                                <td><span class="role-badge role-${user.role}">${user.role}</span></td>
+                                <td>${new Date(user.created_at).toLocaleString()}</td>
+                                <td>
+                                    <button class="btn btn-secondary delete-user-btn" data-id="${user.id}" style="background:#ef4444; color:white; border:none; padding:4px 10px;">Delete</button>
+                                </td>
+                            `;
+                            usersTableBody.appendChild(tr);
+                        });
+
+                        document.querySelectorAll('.delete-user-btn').forEach(btn => {
+                            btn.addEventListener('click', () => deleteUser(btn.dataset.id));
+                        });
+                    });
+            }
+
+            btnAddUser.addEventListener('click', () => {
+                const username = document.getElementById('new-username').value;
+                const password = document.getElementById('new-password').value;
+                const role = document.getElementById('new-role').value;
+
+                if (!username || !password) { alert("Username and password are required."); return; }
+
+                btnAddUser.disabled = true;
+                fetch('/api/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, role })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        alert("User created successfully!");
+                        document.getElementById('new-username').value = '';
+                        document.getElementById('new-password').value = '';
+                        fetchUsers();
+                    } else {
+                        alert("Error: " + data.error);
+                    }
+                })
+                .finally(() => btnAddUser.disabled = false);
+            });
+
+            function deleteUser(userId) {
+                if (!confirm("Are you sure you want to delete this user?")) return;
+                fetch(`/api/users/${userId}`, { method: 'DELETE' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) fetchUsers();
+                        else alert(data.error);
+                    });
+            }
+        });
+    </script>
+</body>
+</html>

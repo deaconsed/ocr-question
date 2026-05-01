@@ -1,0 +1,8 @@
+opencv-python
+scikit-image
+numpy
+easyocr
+openai
+python-dotenv
+flask
+mysql-connector-python

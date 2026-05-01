@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Question Verification Dashboard</title>
+    
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- KaTeX for Math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    
+    <!-- Cropper.js for image cropping -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" />
+
+    <!-- EasyMDE for rich text markdown editing -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h2>CBT Dashboard</h2>
+                    {% if user.role == 'admin' %}
+                    <a href="/admin" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px; text-decoration: none;">⚙️ Admin</a>
+                    {% endif %}
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; color: var(--text-muted); background: var(--bg-element); padding: 8px; border-radius: 6px;">
+                    <span>👤 {{ user.username }}</span>
+                    <a href="/logout" style="color: #ef4444; text-decoration: none;">Logout</a>
+                </div>
+                <input type="hidden" id="current-username" value="{{ user.username }}">
+                <input type="hidden" id="current-user-role" value="{{ user.role }}">
+            </div>
+            
+            <div class="filter-section">
+                <label for="year-select">Select Year</label>
+                <select id="year-select">
+                    <option value="" selected>All Years</option>
+                </select>
+            </div>
+
+            <div class="filter-section">
+                <label for="exam-select">Select Exam</label>
+                <select id="exam-select" disabled>
+                    <option value="" disabled selected>Select a year first...</option>
+                </select>
+            </div>
+
+            <div class="filter-section">
+                <label for="subject-select">Select Subject</label>
+                <select id="subject-select" disabled>
+                    <option value="" disabled selected>Select an exam first...</option>
+                </select>
+            </div>
+
+            <div class="questions-list" id="questions-list">
+                <!-- Question buttons will be populated here -->
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-nav">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <button id="btn-toggle-sidebar" class="btn btn-secondary" style="padding: 6px 12px; font-size: 1.2rem; cursor: pointer;">☰</button>
+                    <h3 id="current-question-title">Select a Subject and Question</h3>
+                </div>
+                <div class="actions">
+                    <button id="btn-next" class="btn btn-secondary">Next Question</button>
+                    <button id="btn-verify" class="btn btn-primary" style="display: none; background-color: var(--primary); border-color: var(--primary);">Verify Question</button>
+                    <button id="btn-save-crop" class="btn btn-primary" style="display: none;">Save Crop & Next</button>
+                    <button id="btn-complete-question" class="btn btn-primary" style="display: none; background-color: var(--success); border-color: var(--success);">Complete Question</button>
+                </div>
+            </header>
+
+            <div class="workspace">
+                <!-- Left Panel: Text & Options -->
+                <div class="panel text-panel">
+                    <div class="panel-header">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span>Extracted Text</span>
+                            <span id="question-timestamp" style="font-size: 0.75rem; color: var(--text-muted); background: var(--bg-element); padding: 2px 8px; border-radius: 4px; font-family: monospace;">00:00:00</span>
+                        </div>
+                        <button id="btn-edit-text" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem; display: none;">Edit Text</button>
+                    </div>
+                    <div class="panel-content" style="position: relative;">
+                        <!-- Preview Mode -->
+                        <div id="preview-container">
+                            <div id="question-text" class="markdown-body">
+                                <!-- Rendered markdown and math will appear here -->
+                                <p class="placeholder-text">Question text will appear here...</p>
+                            </div>
+                            
+                            <div class="options-container" id="options-container">
+                                <!-- Options A, B, C, D will appear here -->
+                            </div>
+
+                            <!-- Teacher Section -->
+                            <div id="teacher-section" style="display: none; margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border);">
+                                <h4 style="margin-bottom: 15px; color: var(--primary);">👨‍🏫 Teacher's Review</h4>
+                                
+                                <div style="margin-bottom: 20px;">
+                                    <label style="display: block; margin-bottom: 10px; font-weight: 600; font-size: 0.9rem;">Select Correct Answer</label>
+                                    <div style="display: flex; gap: 15px;">
+                                        <label class="answer-radio"><input type="radio" name="correct-answer" value="A"> A</label>
+                                        <label class="answer-radio"><input type="radio" name="correct-answer" value="B"> B</label>
+                                        <label class="answer-radio"><input type="radio" name="correct-answer" value="C"> C</label>
+                                        <label class="answer-radio"><input type="radio" name="correct-answer" value="D"> D</label>
+                                    </div>
+                                </div>
+
+                                <div style="margin-bottom: 20px;">
+                                    <label style="display: block; margin-bottom: 10px; font-weight: 600; font-size: 0.9rem;">Upload Workings/Solution Image</label>
+                                    <div id="solution-upload-zone" style="border: 2px dashed var(--border); border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.3s;">
+                                        <div id="solution-preview" style="display: none; margin-bottom: 10px;">
+                                            <img id="solution-img-preview" style="max-width: 100%; max-height: 150px; border-radius: 4px;">
+                                        </div>
+                                        <div id="solution-upload-prompt">
+                                            <span style="font-size: 24px;">📸</span>
+                                            <p style="font-size: 0.85rem; margin-top: 5px;">Click to upload workings</p>
+                                        </div>
+                                        <input type="file" id="solution-file-input" style="display: none;" accept="image/*">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Edit Mode -->
+                        <div id="edit-container" style="display: none; height: 100%; display: flex; flex-direction: column; gap: 15px;">
+                            <label style="font-size: 0.85rem; color: var(--text-muted); font-weight: 600;">QUESTION TEXT (Markdown)</label>
+                            <textarea id="edit-question-textarea" class="edit-input" style="flex: 1; min-height: 150px;"></textarea>
+                            
+                            <div id="edit-options-wrapper" style="display: flex; flex-direction: column; gap: 10px;">
+                                <!-- Dynamic option inputs -->
+                            </div>
+                            
+                            <div style="display: flex; gap: 10px; margin-top: auto; justify-content: space-between;">
+                                <div>
+                                    <button id="btn-save-text" class="btn btn-primary">Save Changes</button>
+                                    <button id="btn-cancel-edit" class="btn btn-secondary">Cancel</button>
+                                </div>
+                                <button id="btn-fix-ai" class="btn btn-secondary" style="background-color: var(--primary); color: white; border-color: var(--primary);">✨ Fix with AI</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Recovery Mode -->
+                        <div id="recovery-container" style="display: none; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px;">
+                            <h3 style="color: #ef4444; margin-bottom: 10px;">Missing Question Detected</h3>
+                            <p id="recovery-hint" style="color: var(--text-muted); margin-bottom: 20px; font-size: 0.95rem;"></p>
+                            
+                            <div id="upload-zone" style="border: 2px dashed var(--border); border-radius: 12px; padding: 40px; background: rgba(255,255,255,0.02); cursor: pointer; width: 100%; max-width: 400px; transition: all 0.3s ease;">
+                                <div style="font-size: 40px; margin-bottom: 15px;">📥</div>
+                                <p style="margin-bottom: 10px; font-weight: 500;">Drag and drop the screenshot here</p>
+                                <p style="font-size: 0.85rem; color: var(--text-muted);">or click to browse</p>
+                                <input type="file" id="missing-file-input" style="display: none;" accept="image/*">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Image & Cropping -->
+                <div class="panel image-panel">
+                    <div class="panel-header">
+                        <span id="image-panel-title">Source Image</span>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <button id="btn-init-crop" class="btn btn-secondary" style="display: none; padding: 4px 8px; font-size: 0.8rem;">Start Cropping</button>
+                            <div class="image-badges" id="image-badges"></div>
+                        </div>
+                    </div>
+                    <div class="panel-content image-container">
+                        <img id="source-image" src="" alt="Source frame" style="display: none;">
+                        <p class="placeholder-text" id="image-placeholder">Source image will appear here...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js"></script>
+    
+    <!-- Custom Logic -->
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
