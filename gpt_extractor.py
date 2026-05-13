@@ -51,10 +51,12 @@ def extract_question_with_gpt(client: OpenAI, image_path: str, filename: str) ->
        - For inline math, you MUST exclusively wrap the formula in `$` (e.g., `$x = 5$`). DO NOT use `\\(` and `\\)`.
        - For block/display math (like `\begin{{matrix}}...`), you MUST exclusively wrap the formula in `$$`. DO NOT use `\\[` and `\\]`.
        - NEVER use standard parentheses like `( x = 5 )` or `( \\frac{{1}}{{2}} )` to wrap math, as this breaks the renderer.
-    5. DIAGRAMS: Determine if the question contains a diagram, graph, or illustration that cannot be represented by text. If it does, set `has_image` to true. DO NOT set `has_image` to true for tables, as they must be converted to Markdown.
+    5. DIAGRAMS: Only set `has_image` to true for genuine visual content that cannot be transcribed as text: graphs, circuit diagrams, biological/anatomical diagrams, geometric figures, maps, or illustrations.
+       - NEVER set `has_image` to true for: tables (convert to Markdown), chemical equations (transcribe using KaTeX), or any mathematical/physical formula.
+       - Chemical equations such as "N₂(g) + O₂(g) ⇌ 2NO(g) ΔH = +180 kJ mol⁻¹" MUST be transcribed as KaTeX in `question_text` (e.g., $N_{{2(g)}} + O_{{2(g)}} \rightleftharpoons 2NO_{{(g)}}\ \Delta H = +180\ \text{{kJ mol}}^{{-1}}$). They are NOT images.
     6. Set `image_name` to exactly "{filename}".
     7. The `options` should be a dictionary mapping the option letter (e.g., "A", "B", "C", "D") to its corresponding text.
-    8. DO NOT use KaTeX notation (like \\text{{}}) for regular text or inline options within reading passages (e.g., cloze tests). Inline options should be formatted as plain text.
+    8. Options that contain ANY mathematical expression (variables, exponents, fractions, symbols, equations) MUST use KaTeX notation just like the question text. The only exception is reading-comprehension cloze tests where options are plain words or phrases (e.g., "however", "therefore") — those should remain plain text.
     """
 
     response = client.beta.chat.completions.parse(
@@ -115,27 +117,30 @@ def fix_text_with_gpt(client: OpenAI, question_text: str, options: dict) -> dict
         print(f"Error fixing text with GPT: {e}")
         return None
 
-def process_single_question(question_id, emit_log, client=None):
+def process_single_question(question_id, emit_log, client=None, force=False):
     if client is None:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             emit_log("Error: OPENAI_API_KEY not found.")
             return False
         client = OpenAI(api_key=api_key)
-        
+
     conn = get_db_connection()
     if not conn:
         emit_log("Error: Could not connect to database in GPT worker.")
         return False
-        
+
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT q.id, q.exam_id, q.question_number, q.image_name, s.name as subject_name 
+    # When force=True, re-extract even if question_text is already populated
+    # (used by the manual-review "Re-run AI" button).
+    where_clause = "WHERE q.id = %s" if force else "WHERE q.id = %s AND q.question_text IS NULL"
+    cursor.execute(f"""
+        SELECT q.id, q.exam_id, q.question_number, q.image_name, s.name as subject_name
         FROM questions q
         JOIN subjects s ON q.subject_id = s.id
-        WHERE q.id = %s AND q.question_text IS NULL
+        {where_clause}
     """, (question_id,))
-    
+
     q = cursor.fetchone()
     if not q:
         cursor.close()

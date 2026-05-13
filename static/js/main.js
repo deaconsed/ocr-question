@@ -724,6 +724,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnNext.addEventListener('click', () => { if (currentQuestionIndex < questionsData.length - 1) selectQuestion(currentQuestionIndex + 1); });
 
+    btnFixAi.addEventListener('click', () => {
+        if (!easyMDE) return;
+        const questionText = easyMDE.value();
+        const currentOptions = {};
+        ['A', 'B', 'C', 'D'].forEach(opt => {
+            if (optionEditors[opt]) {
+                const val = optionEditors[opt].value().trim();
+                if (val) currentOptions[opt] = val;
+            }
+        });
+        if (!questionText && Object.keys(currentOptions).length === 0) {
+            alert('No text to fix.');
+            return;
+        }
+        btnFixAi.textContent = '⏳ Fixing...';
+        btnFixAi.disabled = true;
+        fetch('/api/fix_with_ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question_text: questionText, options: currentOptions })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.fixed_data) {
+                easyMDE.value(data.fixed_data.question_text || questionText);
+                const fixedOptions = data.fixed_data.options || {};
+                ['A', 'B', 'C', 'D'].forEach(opt => {
+                    if (optionEditors[opt] && fixedOptions[opt] !== undefined) {
+                        optionEditors[opt].value(fixedOptions[opt]);
+                    }
+                });
+            } else {
+                alert('Error: ' + (data.error || 'AI fix failed'));
+            }
+        })
+        .catch(() => alert('Network error.'))
+        .finally(() => {
+            btnFixAi.textContent = '✨ Fix with AI';
+            btnFixAi.disabled = false;
+        });
+    });
+
     uploadZone.addEventListener('click', () => missingFileInput.click());
     missingFileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {

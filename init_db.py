@@ -85,7 +85,31 @@ def init_db():
             )
         """)
         print("Table 'questions' ensured.")
-        
+
+        # Create unidentified_frames table — holds OCR misses for later manual review
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS unidentified_frames (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                exam_id INT NOT NULL,
+                frame_number INT NOT NULL,
+                image_path VARCHAR(500) NOT NULL,
+                video_timestamp VARCHAR(50),
+                ocr_text TEXT,
+                ocr_subject VARCHAR(255) NULL,
+                ocr_question_number INT NULL,
+                status ENUM('pending','resolved','discarded') NOT NULL DEFAULT 'pending',
+                resolved_by INT NULL,
+                resolved_at TIMESTAMP NULL,
+                resolved_subject VARCHAR(255) NULL,
+                resolved_question_number INT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (exam_id) REFERENCES exams(id),
+                FOREIGN KEY (resolved_by) REFERENCES users(id),
+                INDEX idx_exam_status (exam_id, status)
+            )
+        """)
+        print("Table 'unidentified_frames' ensured.")
+
         # ── Lazy migration for new workflow columns ──
         workflow_cols = [
             ("teacher_answer", "VARCHAR(10) NULL"),

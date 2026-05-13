@@ -11,9 +11,10 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
-            padding: 30px;
+            padding: 20px;
             max-width: 1200px;
             margin: 0 auto;
+            box-sizing: border-box;
         }
         
         .header-actions {
@@ -51,6 +52,7 @@
             display: none;
             flex: 1;
             flex-direction: column;
+            min-height: 0; /* Critical for inner scrolling */
         }
 
         .tab-content.active {
@@ -125,6 +127,116 @@
         .role-admin { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
         .role-verifier { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
         .role-teacher { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+
+        .sessions-card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            backdrop-filter: var(--glass-blur);
+        }
+        .sessions-card h4 {
+            margin: 0 0 12px 0;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .session-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .session-row label { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; min-width: 60px; }
+        .session-row input[type="text"] {
+            flex: 1;
+            padding: 7px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--bg-element);
+            color: white;
+            font-size: 0.85rem;
+        }
+        .session-index-badge {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--primary);
+            min-width: 24px;
+        }
+        .btn-remove-session {
+            background: transparent;
+            border: 1px solid #ef4444;
+            color: #ef4444;
+            border-radius: 6px;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .btn-remove-session:hover { background: rgba(239,68,68,0.1); }
+        .sessions-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+
+        /* Manual Review (Unidentified frames) */
+        .review-filter-bar {
+            display: flex; gap: 12px; align-items: end; flex-wrap: wrap;
+            padding: 14px 18px; margin-bottom: 14px;
+            background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
+        }
+        .review-filter-bar .form-group { min-width: 160px; }
+        .review-list {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 14px; padding-bottom: 20px;
+        }
+        .review-card {
+            background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
+            padding: 12px; display: flex; flex-direction: column; gap: 10px;
+        }
+        .review-card img {
+            width: 100%; max-height: 220px; object-fit: contain;
+            background: #000; border-radius: 8px; cursor: zoom-in;
+        }
+        .review-meta {
+            font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;
+        }
+        .review-meta strong { color: var(--text); }
+        .ocr-text {
+            font-family: 'Consolas', monospace; font-size: 0.75rem;
+            background: var(--bg-element); padding: 6px 8px; border-radius: 6px;
+            color: var(--text-muted); max-height: 60px; overflow-y: auto;
+            word-break: break-all;
+        }
+        .review-form {
+            display: grid; grid-template-columns: 1fr 90px; gap: 8px;
+        }
+        .review-form select, .review-form input {
+            padding: 7px 10px; border-radius: 6px;
+            border: 1px solid var(--border); background: var(--bg-element); color: white;
+            font-size: 0.85rem;
+        }
+        .review-actions { display: flex; gap: 8px; }
+        .review-actions button { flex: 1; padding: 7px 10px; font-size: 0.85rem; }
+        .btn-resolve { background: var(--primary); color: white; border: none; border-radius: 6px; cursor: pointer; }
+        .btn-discard { background: transparent; color: #ef4444; border: 1px solid #ef4444; border-radius: 6px; cursor: pointer; }
+        .btn-discard:hover { background: rgba(239,68,68,0.1); }
+        .btn-run-ai {
+            flex: 1; padding: 7px 10px; font-size: 0.85rem;
+            background: transparent; color: #10b981; border: 1px solid #10b981;
+            border-radius: 6px; cursor: pointer;
+        }
+        .btn-run-ai:hover { background: rgba(16,185,129,0.1); }
+        .btn-run-ai:disabled { opacity: 0.5; cursor: not-allowed; }
+        .review-empty {
+            grid-column: 1 / -1; text-align: center; padding: 40px;
+            color: var(--text-muted); font-size: 0.9rem;
+        }
+        .image-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000;
+            display: none; align-items: center; justify-content: center; cursor: zoom-out;
+        }
+        .image-modal.open { display: flex; }
+        .image-modal img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
     </style>
 </head>
 <body>
@@ -136,17 +248,24 @@
 
         <div class="tabs">
             <button class="tab-btn active" data-tab="pipeline">Pipeline Orchestrator</button>
+            <button class="tab-btn" data-tab="folder">Folder Import</button>
             <button class="tab-btn" data-tab="users">User Management</button>
+            <button class="tab-btn" data-tab="unidentified">Manual Review</button>
+            <button class="tab-btn" data-tab="database">Database</button>
         </div>
 
         <!-- Pipeline Tab -->
         <div class="tab-content active" id="tab-pipeline">
             <div class="video-selector-card">
                 <div style="flex: 2;">
-                    <label for="video-select" style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">SELECT VIDEO FROM FOLDER</label>
-                    <select id="video-select">
-                        <option value="" disabled selected>Loading videos...</option>
-                    </select>
+                    <label for="video-path" style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">VIDEO FILE PATH / SELECTION</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="video-path" placeholder="e.g. video.mp4 or C:\Videos\jamb.mkv" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-element); color: white;">
+                        <button type="button" id="btn-browse" class="btn btn-secondary">Browse...</button>
+                    </div>
+                    <div id="video-suggestions" style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);">
+                        Suggestions: <span id="suggested-list">None found</span>
+                    </div>
                 </div>
                 <div style="flex: 1;">
                     <label for="video-year" style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">EXAM YEAR</label>
@@ -156,8 +275,42 @@
                 <button id="btn-stop" class="btn btn-secondary" style="padding: 10px 24px; font-size: 1rem; margin-top: 22px; display: none; background-color: #ef4444; color: white; border-color: #ef4444;">Stop Process</button>
             </div>
 
-            <div class="terminal-container" id="terminal">
+            <!-- Session Timestamps -->
+            <div class="sessions-card">
+                <h4>Session Timestamps <span style="font-weight:400;color:var(--text-muted);text-transform:none;">(optional — leave empty for automatic detection)</span></h4>
+                <div id="sessions-list"></div>
+                <p class="sessions-hint">Format: <code style="color:var(--primary)">HH:MM:SS</code> or <code style="color:var(--primary)">MM:SS</code>. Add one row per exam session in the video.</p>
+                <button type="button" id="btn-add-session" class="btn btn-secondary" style="margin-top:8px; padding:6px 14px; font-size:0.85rem;">+ Add Session</button>
+            </div>
+
+            <div class="terminal-container" id="terminal" style="min-height: 0;">
                 <div class="terminal-line" style="color: var(--text-muted);">Waiting for pipeline to start...</div>
+            </div>
+        </div>
+
+        <!-- Folder Import Tab -->
+        <div class="tab-content" id="tab-folder">
+            <div class="video-selector-card">
+                <div style="flex: 2;">
+                    <label for="folder-path" style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">SCREENSHOT FOLDER PATH</label>
+                    <div style="display: flex; gap: 10px;">
+                        <input type="text" id="folder-path" placeholder="e.g. C:\Screenshots\202660261508FG" style="flex: 1; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-element); color: white;">
+                        <button type="button" id="btn-browse-folder" class="btn btn-secondary">Browse...</button>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 0.75rem; color: var(--text-muted);">
+                        Expected structure: <span style="color: var(--primary); font-family: monospace;">FolderName / SUBJECT NAME / 1.png, 2.png, ...</span>
+                    </div>
+                </div>
+                <div style="flex: 1;">
+                    <label for="folder-year" style="display: block; margin-bottom: 8px; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">EXAM YEAR</label>
+                    <input type="number" id="folder-year" value="2026" min="2000" max="2100" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-element); color: white;">
+                </div>
+                <button id="btn-import-folder" class="btn btn-primary" style="padding: 10px 24px; font-size: 1rem; margin-top: 22px;">Import Folder</button>
+                <button id="btn-stop-folder" class="btn btn-secondary" style="padding: 10px 24px; font-size: 1rem; margin-top: 22px; display: none; background-color: #ef4444; color: white; border-color: #ef4444;">Stop Import</button>
+            </div>
+
+            <div class="terminal-container" id="folder-terminal" style="min-height: 0;">
+                <div class="terminal-line" style="color: var(--text-muted);">Waiting for folder import to start...</div>
             </div>
         </div>
 
@@ -186,7 +339,7 @@
                 </div>
             </div>
 
-            <div class="user-manager-card" style="flex: 1; overflow-y: auto;">
+            <div class="user-manager-card" style="flex: 1; overflow-y: auto; min-height: 0;">
                 <h3>System Users</h3>
                 <table class="user-table">
                     <thead>
@@ -203,6 +356,82 @@
                 </table>
             </div>
         </div>
+
+        <!-- Manual Review (Unidentified Frames) Tab -->
+        <div class="tab-content" id="tab-unidentified">
+            <div class="review-filter-bar">
+                <div class="form-group">
+                    <label>Exam Session</label>
+                    <select id="review-exam-filter">
+                        <option value="">All exams</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="review-status-filter">
+                        <option value="pending" selected>Pending</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="discarded">Discarded</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+                <div style="margin-left:auto;">
+                    <button type="button" id="btn-review-refresh" class="btn btn-secondary">Refresh</button>
+                </div>
+                <div style="flex-basis:100%; font-size:0.78rem; color: var(--text-muted);">
+                    Frames where OCR could not identify either the subject or the question number.
+                    Pick a subject + number to promote it into a real question (image moves into the canonical folder
+                    and is queued for GPT extraction). Discard if it's not a question screen.
+                </div>
+            </div>
+            <div id="review-list" class="review-list" style="flex:1; overflow-y:auto; min-height:0;"></div>
+        </div>
+
+        <!-- Database Tab -->
+        <div class="tab-content" id="tab-database">
+            <div class="user-manager-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <h3 style="margin:0 0 4px 0;">Database Backup</h3>
+                        <p style="margin:0; color: var(--text-muted); font-size: 0.85rem;">
+                            Generates a full SQL dump (schema + data) and prompts to download.
+                            Uses <code style="color:var(--primary)">mysqldump</code> when available, otherwise a Python fallback.
+                        </p>
+                    </div>
+                    <button id="btn-backup-db" class="btn btn-primary" style="padding:10px 20px;">Download SQL Backup</button>
+                </div>
+            </div>
+
+            <div class="user-manager-card" style="flex: 1; overflow-y: auto; min-height: 0;">
+                <h3 style="margin:0 0 4px 0;">Exam Sessions</h3>
+                <p style="margin:0 0 12px 0; color: var(--text-muted); font-size: 0.85rem;">
+                    Deleting a session removes its exam record, all associated questions, and the
+                    <code style="color:var(--primary)">extracted_frames/exam_&lt;id&gt;/</code> folder on disk. This cannot be undone.
+                </p>
+                <table class="user-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Label</th>
+                            <th>Year</th>
+                            <th>Questions</th>
+                            <th>Verified</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessions-table-body">
+                        <!-- Sessions will be loaded here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image zoom modal (used by Manual Review tab) -->
+    <div id="image-modal" class="image-modal" onclick="this.classList.remove('open')">
+        <img id="image-modal-img" alt="">
     </div>
 
     <script>
@@ -220,26 +449,50 @@
                     document.getElementById(`tab-${targetTab}`).classList.add('active');
                     
                     if (targetTab === 'users') fetchUsers();
+                    if (targetTab === 'database') fetchSessions();
+                    if (targetTab === 'unidentified') reviewInit();
                 });
             });
 
-            // Pipeline Logic (Existing)
-            const videoSelect = document.getElementById('video-select');
+            // Pipeline Logic
+            const videoPathInput = document.getElementById('video-path');
+            const btnBrowse = document.getElementById('btn-browse');
+            const suggestedList = document.getElementById('suggested-list');
             const btnProcess = document.getElementById('btn-process');
             const btnStop = document.getElementById('btn-stop');
             const terminal = document.getElementById('terminal');
             let isRunning = false;
 
+            btnBrowse.addEventListener('click', () => {
+                fetch('/api/browse_file')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.file_path) {
+                            videoPathInput.value = data.file_path;
+                        }
+                    });
+            });
+
             function fetchStatus() {
                 fetch('/api/videos')
                     .then(res => res.json())
                     .then(data => {
-                        videoSelect.innerHTML = '<option value="" disabled selected>Select a video to process...</option>';
-                        data.videos.forEach(v => {
-                            const opt = document.createElement('option');
-                            opt.value = v; opt.textContent = v;
-                            videoSelect.appendChild(opt);
-                        });
+                        suggestedList.innerHTML = '';
+                        if (data.videos.length > 0) {
+                            data.videos.forEach(v => {
+                                const span = document.createElement('span');
+                                span.style.color = 'var(--primary)';
+                                span.style.cursor = 'pointer';
+                                span.style.marginRight = '10px';
+                                span.style.textDecoration = 'underline';
+                                span.textContent = v;
+                                span.onclick = () => { videoPathInput.value = v; };
+                                suggestedList.appendChild(span);
+                            });
+                        } else {
+                            suggestedList.textContent = 'None found in root or /videos folder.';
+                        }
+                        
                         isRunning = data.is_running;
                         if (isRunning) { setUIRunning(true); startLogStream(); }
                         else { setUIRunning(false); }
@@ -252,13 +505,19 @@
                     btnProcess.style.display = 'none';
                     btnStop.style.display = 'block';
                     btnStop.disabled = false;
-                    videoSelect.disabled = true;
+                    videoPathInput.disabled = true;
+                    btnBrowse.disabled = true;
+                    btnAddSession.disabled = true;
+                    sessionsList.querySelectorAll('input, button').forEach(el => el.disabled = true);
                 } else {
                     btnProcess.style.display = 'block';
                     btnProcess.disabled = false;
                     btnProcess.textContent = "Start Processing";
                     btnStop.style.display = 'none';
-                    videoSelect.disabled = false;
+                    videoPathInput.disabled = false;
+                    btnBrowse.disabled = false;
+                    btnAddSession.disabled = false;
+                    sessionsList.querySelectorAll('input, button').forEach(el => el.disabled = false);
                 }
             }
 
@@ -292,19 +551,63 @@
                 };
             }
 
+            // Session timestamp management
+            const sessionsList = document.getElementById('sessions-list');
+            const btnAddSession = document.getElementById('btn-add-session');
+            let sessionCount = 0;
+
+            function addSessionRow() {
+                sessionCount++;
+                const idx = sessionCount;
+                const row = document.createElement('div');
+                row.className = 'session-row';
+                row.dataset.sessionIdx = idx;
+                row.innerHTML = `
+                    <span class="session-index-badge">S${idx}</span>
+                    <label>Start</label>
+                    <input type="text" class="session-start" placeholder="00:05:30" style="max-width:120px;">
+                    <label>End</label>
+                    <input type="text" class="session-end" placeholder="01:45:00" style="max-width:120px;">
+                    <button type="button" class="btn-remove-session" onclick="this.closest('.session-row').remove(); renumberSessions();">Remove</button>
+                `;
+                sessionsList.appendChild(row);
+            }
+
+            function renumberSessions() {
+                sessionsList.querySelectorAll('.session-row').forEach((row, i) => {
+                    row.querySelector('.session-index-badge').textContent = `S${i + 1}`;
+                });
+            }
+
+            function getSessionsPayload() {
+                const rows = sessionsList.querySelectorAll('.session-row');
+                if (rows.length === 0) return null;
+                const sessions = [];
+                rows.forEach(row => {
+                    const start = row.querySelector('.session-start').value.trim();
+                    const end = row.querySelector('.session-end').value.trim();
+                    if (start || end) sessions.push({ start: start || '0', end: end || '0' });
+                });
+                return sessions.length > 0 ? sessions : null;
+            }
+
+            btnAddSession.addEventListener('click', addSessionRow);
+
             btnProcess.addEventListener('click', () => {
-                const videoPath = videoSelect.value;
+                const videoPath = videoPathInput.value;
                 const year = document.getElementById('video-year').value;
-                
+
                 if (!videoPath) { alert("Please select a video first."); return; }
                 if (!year) { alert("Please specify the exam year."); return; }
 
+                const sessions = getSessionsPayload();
+
                 btnProcess.disabled = true; btnProcess.textContent = "Starting...";
-                videoSelect.disabled = true;
+                videoPathInput.disabled = true;
                 fetch('/api/process_video', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ video_path: videoPath, year: parseInt(year) })
+                    body: JSON.stringify({ video_path: videoPath, year: parseInt(year), sessions })
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -388,6 +691,436 @@
                         else alert(data.error);
                     });
             }
+
+            // ── Folder Import Logic ──
+            const folderPathInput = document.getElementById('folder-path');
+            const btnBrowseFolder = document.getElementById('btn-browse-folder');
+            const folderYearInput = document.getElementById('folder-year');
+            const btnImportFolder = document.getElementById('btn-import-folder');
+            const btnStopFolder = document.getElementById('btn-stop-folder');
+            const folderTerminal = document.getElementById('folder-terminal');
+            let folderEvtSource = null;
+
+            btnBrowseFolder.addEventListener('click', () => {
+                fetch('/api/browse_folder')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.folder_path) folderPathInput.value = data.folder_path;
+                    });
+            });
+
+            function setFolderUIRunning(running) {
+                if (running) {
+                    btnImportFolder.style.display = 'none';
+                    btnStopFolder.style.display = 'block';
+                    btnStopFolder.disabled = false;
+                    folderPathInput.disabled = true;
+                    folderYearInput.disabled = true;
+                    btnBrowseFolder.disabled = true;
+                } else {
+                    btnImportFolder.style.display = 'block';
+                    btnImportFolder.disabled = false;
+                    btnImportFolder.textContent = 'Import Folder';
+                    btnStopFolder.style.display = 'none';
+                    folderPathInput.disabled = false;
+                    folderYearInput.disabled = false;
+                    btnBrowseFolder.disabled = false;
+                }
+            }
+
+            function appendFolderLog(msg) {
+                const line = document.createElement('div');
+                line.className = 'terminal-line';
+                if (msg.includes('Error') || msg.includes('error') || msg.includes('Fail')) line.classList.add('error');
+                else if (msg.includes('Complete') || msg.includes('Queued') || msg.includes('imported')) line.classList.add('success');
+                else if (msg.includes('===')) line.classList.add('header');
+                line.textContent = msg;
+                folderTerminal.appendChild(line);
+                folderTerminal.scrollTop = folderTerminal.scrollHeight;
+            }
+
+            function startFolderLogStream() {
+                if (folderEvtSource) return;
+                folderTerminal.innerHTML = '';
+                appendFolderLog('Connecting to import stream...');
+                folderEvtSource = new EventSource('/api/stream_progress');
+                folderEvtSource.onmessage = function(e) {
+                    appendFolderLog(e.data);
+                    if (e.data.includes('Pipeline Complete!') || e.data.includes('Import Stopped') || e.data.includes('Import aborted')) {
+                        folderEvtSource.close(); folderEvtSource = null;
+                        setFolderUIRunning(false);
+                    }
+                };
+                folderEvtSource.onerror = function() {
+                    appendFolderLog('Stream disconnected.');
+                    folderEvtSource.close(); folderEvtSource = null;
+                };
+            }
+
+            btnImportFolder.addEventListener('click', () => {
+                const folderPath = folderPathInput.value.trim();
+                const year = folderYearInput.value;
+                if (!folderPath) { alert('Please enter or browse to a folder path.'); return; }
+                if (!year) { alert('Please specify the exam year.'); return; }
+
+                btnImportFolder.disabled = true;
+                btnImportFolder.textContent = 'Starting...';
+
+                fetch('/api/import_folder', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder_path: folderPath, year: parseInt(year) })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) { setFolderUIRunning(true); startFolderLogStream(); }
+                    else { alert(data.error); setFolderUIRunning(false); }
+                })
+                .catch(() => { alert('Network error.'); setFolderUIRunning(false); });
+            });
+
+            btnStopFolder.addEventListener('click', () => {
+                if (!confirm('Are you sure you want to stop the import?')) return;
+                btnStopFolder.disabled = true;
+                btnStopFolder.textContent = 'Stopping...';
+                fetch('/api/stop_video', { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (!data.success) { alert(data.error); btnStopFolder.disabled = false; btnStopFolder.textContent = 'Stop Import'; }
+                    });
+            });
+
+            // Resume folder UI state if pipeline is already running when tab opens
+            tabButtons.forEach(btn => {
+                if (btn.dataset.tab === 'folder') {
+                    btn.addEventListener('click', () => {
+                        fetch('/api/videos').then(r => r.json()).then(data => {
+                            if (data.is_running) { setFolderUIRunning(true); startFolderLogStream(); }
+                        });
+                    });
+                }
+            });
+
+            // ── Manual Review (Unidentified Frames) Tab Logic ──
+            const reviewListEl = document.getElementById('review-list');
+            const reviewExamFilter = document.getElementById('review-exam-filter');
+            const reviewStatusFilter = document.getElementById('review-status-filter');
+            const btnReviewRefresh = document.getElementById('btn-review-refresh');
+            const imageModal = document.getElementById('image-modal');
+            const imageModalImg = document.getElementById('image-modal-img');
+            let reviewSubjects = [];
+            let reviewInitialized = false;
+
+            function reviewInit() {
+                if (reviewInitialized) { fetchUnidentified(); return; }
+                reviewInitialized = true;
+                Promise.all([
+                    fetch('/api/admin/all_subjects').then(r => r.json()),
+                    fetch('/api/exams').then(r => r.json())
+                ]).then(([subjects, exams]) => {
+                    reviewSubjects = subjects;
+                    reviewExamFilter.innerHTML = '<option value="">All exams</option>' +
+                        exams.map(e => `<option value="${e.id}">${escapeHtml(e.label || ('Exam ' + e.id))}</option>`).join('');
+                    fetchUnidentified();
+                }).catch(err => {
+                    reviewListEl.innerHTML = `<div class="review-empty" style="color:#ef4444;">Init failed: ${err.message}</div>`;
+                });
+            }
+
+            reviewExamFilter.addEventListener('change', fetchUnidentified);
+            reviewStatusFilter.addEventListener('change', fetchUnidentified);
+            btnReviewRefresh.addEventListener('click', fetchUnidentified);
+
+            function fetchUnidentified() {
+                const params = new URLSearchParams();
+                if (reviewExamFilter.value) params.set('exam_id', reviewExamFilter.value);
+                if (reviewStatusFilter.value) params.set('status', reviewStatusFilter.value);
+                reviewListEl.innerHTML = '<div class="review-empty">Loading...</div>';
+                fetch(`/api/admin/unidentified?${params}`)
+                    .then(r => r.json())
+                    .then(rows => renderUnidentified(rows))
+                    .catch(err => {
+                        reviewListEl.innerHTML = `<div class="review-empty" style="color:#ef4444;">${err.message}</div>`;
+                    });
+            }
+
+            function subjectOptions(selected) {
+                return ['<option value="">— pick subject —</option>']
+                    .concat(reviewSubjects.map(s =>
+                        `<option value="${escapeHtml(s.name)}" ${s.name === selected ? 'selected' : ''}>${escapeHtml(s.name)} (1..${s.expected})</option>`
+                    )).join('');
+            }
+
+            function renderUnidentified(rows) {
+                if (!Array.isArray(rows) || rows.length === 0) {
+                    reviewListEl.innerHTML = '<div class="review-empty">No frames match this filter.</div>';
+                    return;
+                }
+                reviewListEl.innerHTML = '';
+                rows.forEach(row => {
+                    const card = document.createElement('div');
+                    card.className = 'review-card';
+                    const examLabel = escapeHtml(row.exam_label || ('Exam ' + row.exam_id));
+                    const ocrText = escapeHtml(row.ocr_text || '(no text)');
+                    const status = row.status || 'pending';
+                    const isPending = status === 'pending';
+
+                    const statusBadge = status === 'resolved'
+                        ? `<span style="color:#10b981;">✓ Resolved as ${escapeHtml(row.resolved_subject || '?')} Q${row.resolved_question_number ?? '?'}${row.resolved_by_username ? ' by ' + escapeHtml(row.resolved_by_username) : ''}</span>`
+                        : status === 'discarded'
+                            ? `<span style="color:#ef4444;">✗ Discarded${row.resolved_by_username ? ' by ' + escapeHtml(row.resolved_by_username) : ''}</span>`
+                            : `<span style="color:#f59e0b;">⏳ Pending review</span>`;
+
+                    // AI extraction status (only meaningful for resolved rows).
+                    let aiSection = '';
+                    if (status === 'resolved') {
+                        const extracted = !!row.ai_extracted;
+                        const aiBadge = extracted
+                            ? `<span style="color:#10b981;">🤖 AI extracted ✓</span>`
+                            : `<span style="color:#f59e0b;">🤖 AI extraction pending</span>`;
+                        aiSection = `
+                            <div class="review-meta">${aiBadge}</div>
+                            <div class="review-actions">
+                                <button class="btn-run-ai" data-id="${row.id}" data-force="${extracted}">
+                                    ${extracted ? 'Re-run AI Extraction' : 'Run AI Extraction'}
+                                </button>
+                            </div>`;
+                    }
+
+                    card.innerHTML = `
+                        <img src="/unidentified_image/${row.id}" alt="frame ${row.frame_number}" loading="lazy" onclick="openImageModal(this.src)">
+                        <div class="review-meta">
+                            <strong>${examLabel}</strong> · frame ${row.frame_number} · ${escapeHtml(row.video_timestamp || '')}<br>
+                            ${statusBadge}<br>
+                            OCR guess: <strong>${escapeHtml(row.ocr_subject || '—')}</strong> / Q${row.ocr_question_number ?? '—'}
+                        </div>
+                        <div class="ocr-text" title="Raw OCR output">${ocrText}</div>
+                        ${isPending ? `
+                            <div class="review-form">
+                                <select class="review-subject">${subjectOptions(row.ocr_subject)}</select>
+                                <input type="number" class="review-qnum" min="1" max="60"
+                                       value="${row.ocr_question_number ?? ''}" placeholder="Q#">
+                            </div>
+                            <div class="review-actions">
+                                <button class="btn-resolve" data-id="${row.id}">Save as Question</button>
+                                <button class="btn-discard" data-id="${row.id}">Discard</button>
+                            </div>` : ''}
+                        ${aiSection}
+                    `;
+                    reviewListEl.appendChild(card);
+                });
+
+                reviewListEl.querySelectorAll('.btn-resolve').forEach(btn => {
+                    btn.addEventListener('click', () => resolveUnidentified(btn));
+                });
+                reviewListEl.querySelectorAll('.btn-discard').forEach(btn => {
+                    btn.addEventListener('click', () => discardUnidentified(btn));
+                });
+                reviewListEl.querySelectorAll('.btn-run-ai').forEach(btn => {
+                    btn.addEventListener('click', () => runAiExtraction(btn));
+                });
+            }
+
+            function resolveUnidentified(btn) {
+                const card = btn.closest('.review-card');
+                const subject = card.querySelector('.review-subject').value;
+                const qnumRaw = card.querySelector('.review-qnum').value;
+                if (!subject) { alert('Please pick a subject.'); return; }
+                const q = parseInt(qnumRaw, 10);
+                if (!q || q < 1 || q > 60) { alert('Question number must be between 1 and 60.'); return; }
+
+                btn.disabled = true;
+                const originalText = btn.textContent;
+                btn.textContent = 'Saving...';
+
+                fetch(`/api/admin/unidentified/${btn.dataset.id}/resolve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ subject, question_number: q })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        btn.textContent = data.ai_triggered ? 'Saved · AI running...' : 'Saved';
+                        card.style.transition = 'opacity 0.3s';
+                        card.style.opacity = '0.4';
+                        // Refresh after a few seconds so the AI-extraction badge updates.
+                        setTimeout(() => fetchUnidentified(), data.ai_triggered ? 8000 : 500);
+                    } else {
+                        alert('Error: ' + (data.error || 'unknown'));
+                        btn.disabled = false; btn.textContent = originalText;
+                    }
+                })
+                .catch(err => {
+                    alert('Network error: ' + err.message);
+                    btn.disabled = false; btn.textContent = originalText;
+                });
+            }
+
+            function runAiExtraction(btn) {
+                const force = btn.dataset.force === 'true';
+                if (force && !confirm('Re-run AI extraction? Existing question text/options will be OVERWRITTEN.')) return;
+
+                btn.disabled = true;
+                const original = btn.textContent;
+                btn.textContent = force ? 'Re-extracting...' : 'Extracting...';
+
+                fetch(`/api/admin/unidentified/${btn.dataset.id}/run_ai`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ force })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        // Extraction runs asynchronously on the server. Poll the list
+                        // a few seconds later so the badge updates.
+                        btn.textContent = 'Running on server...';
+                        setTimeout(() => fetchUnidentified(), 8000);
+                    } else {
+                        alert('Error: ' + (data.error || 'unknown'));
+                        btn.disabled = false; btn.textContent = original;
+                    }
+                })
+                .catch(err => {
+                    alert('Network error: ' + err.message);
+                    btn.disabled = false; btn.textContent = original;
+                });
+            }
+
+            function discardUnidentified(btn) {
+                if (!confirm('Discard this frame as "not a question"? The image will be deleted.')) return;
+                btn.disabled = true;
+                btn.textContent = 'Discarding...';
+                fetch(`/api/admin/unidentified/${btn.dataset.id}/discard`, { method: 'POST' })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.success) {
+                            const card = btn.closest('.review-card');
+                            card.style.transition = 'opacity 0.3s';
+                            card.style.opacity = '0';
+                            setTimeout(() => fetchUnidentified(), 300);
+                        } else {
+                            alert('Error: ' + (data.error || 'unknown'));
+                            btn.disabled = false; btn.textContent = 'Discard';
+                        }
+                    })
+                    .catch(err => {
+                        alert('Network error: ' + err.message);
+                        btn.disabled = false; btn.textContent = 'Discard';
+                    });
+            }
+
+            window.openImageModal = function(src) {
+                imageModalImg.src = src;
+                imageModal.classList.add('open');
+            };
+
+            // ── Database Tab Logic ──
+            const sessionsTableBody = document.getElementById('sessions-table-body');
+            const btnBackupDb = document.getElementById('btn-backup-db');
+
+            function fetchSessions() {
+                fetch('/api/exams')
+                    .then(res => res.json())
+                    .then(exams => {
+                        sessionsTableBody.innerHTML = '';
+                        if (!Array.isArray(exams) || exams.length === 0) {
+                            sessionsTableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:20px;">No exam sessions found.</td></tr>';
+                            return;
+                        }
+                        exams.forEach(exam => {
+                            const created = exam.created_at ? new Date(exam.created_at).toLocaleString() : '—';
+                            const tr = document.createElement('tr');
+                            tr.innerHTML = `
+                                <td>${exam.id}</td>
+                                <td><strong>${escapeHtml(exam.label || '')}</strong></td>
+                                <td>${exam.year ?? '—'}</td>
+                                <td>${exam.total_questions ?? 0}</td>
+                                <td>${exam.verified_count ?? 0}</td>
+                                <td>${escapeHtml(exam.status || '—')}</td>
+                                <td>${created}</td>
+                                <td>
+                                    <button class="btn btn-secondary delete-session-btn"
+                                            data-id="${exam.id}"
+                                            data-label="${escapeHtml(exam.label || '')}"
+                                            style="background:#ef4444; color:white; border:none; padding:4px 10px;">
+                                        Delete
+                                    </button>
+                                </td>
+                            `;
+                            sessionsTableBody.appendChild(tr);
+                        });
+                        document.querySelectorAll('.delete-session-btn').forEach(btn => {
+                            btn.addEventListener('click', () => deleteSession(btn.dataset.id, btn.dataset.label));
+                        });
+                    })
+                    .catch(err => {
+                        sessionsTableBody.innerHTML = `<tr><td colspan="8" style="color:#ef4444; padding:20px;">Failed to load sessions: ${err.message}</td></tr>`;
+                    });
+            }
+
+            function escapeHtml(s) {
+                return String(s).replace(/[&<>"']/g, c => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                })[c]);
+            }
+
+            function deleteSession(id, label) {
+                if (!confirm(`Delete session "${label}" (ID ${id})?\n\nThis permanently removes ALL questions and the extracted_frames/exam_${id}/ folder. Cannot be undone.`)) return;
+                const typed = prompt(`Type the session ID (${id}) to confirm deletion:`);
+                if (typed !== String(id)) {
+                    alert('Confirmation did not match. Deletion cancelled.');
+                    return;
+                }
+                fetch(`/api/admin/exams/${id}`, { method: 'DELETE' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            let msg = `Session deleted. Removed ${data.deleted_questions} questions.`;
+                            if (data.warning) msg += `\n\nWarning: ${data.warning}`;
+                            else if (!data.folder_removed) msg += '\n(No frame folder existed on disk.)';
+                            alert(msg);
+                            fetchSessions();
+                        } else {
+                            alert('Error: ' + (data.error || 'Unknown error'));
+                        }
+                    })
+                    .catch(err => alert('Network error: ' + err.message));
+            }
+
+            btnBackupDb.addEventListener('click', () => {
+                if (!confirm('Generate and download a full SQL backup of the database?')) return;
+                btnBackupDb.disabled = true;
+                const originalLabel = btnBackupDb.textContent;
+                btnBackupDb.textContent = 'Generating...';
+
+                fetch('/api/admin/db_backup')
+                    .then(res => {
+                        if (!res.ok) {
+                            return res.json().then(j => { throw new Error(j.error || `HTTP ${res.status}`); });
+                        }
+                        const cd = res.headers.get('Content-Disposition') || '';
+                        const match = cd.match(/filename="?([^"]+)"?/);
+                        const filename = match ? match[1] : 'backup.sql';
+                        return res.blob().then(blob => ({ blob, filename }));
+                    })
+                    .then(({ blob, filename }) => {
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                    })
+                    .catch(err => alert('Backup failed: ' + err.message))
+                    .finally(() => {
+                        btnBackupDb.disabled = false;
+                        btnBackupDb.textContent = originalLabel;
+                    });
+            });
         });
     </script>
 </body>
