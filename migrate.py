@@ -11,9 +11,18 @@ EXPORT  (run on the machine that HAS the data)
 
     python migrate.py export                 # lists exams, asks which to migrate
     python migrate.py export 2 7 8           # migrate exam ids 2, 7, 8
+    python migrate.py export --new           # only exams not migrated before
     python migrate.py export --all           # migrate every exam
 
   → produces  migration_bundle_<timestamp>.zip  (contains the data + images)
+
+  After a successful export each chosen exam is stamped `migrated_at`, so next
+  time `--new` (or the listing) shows you exactly what is still outstanding.
+
+OTHER
+
+    python migrate.py list                   # show exams + their migrated status
+    python migrate.py unmark 2 7 | --all     # clear the migrated flag to re-send
 
 IMPORT  (run on the target machine, after `git pull` + `.env` is set up)
 
@@ -75,17 +84,43 @@ def _remap_exam_path(path, old, new):
 
 # ─────────────────────────────── export ───────────────────────────────
 
+def _ensure_migrated_column(cursor, conn):
+    """Add exams.migrated_at if an older schema is missing it."""
+    try:
+        cursor.execute("SELECT migrated_at FROM exams LIMIT 1")
+        cursor.fetchall()
+    except Exception:
+        try:
+            cursor.execute("ALTER TABLE exams ADD COLUMN migrated_at TIMESTAMP NULL")
+            conn.commit()
+        except Exception:
+            pass
+
+
 def _list_exams(cursor):
     cursor.execute("""
         SELECT e.id, e.label, e.year, e.video_filename, e.session_index, e.status,
+               e.migrated_at,
                (SELECT COUNT(*) FROM questions q WHERE q.exam_id = e.id) AS q_count
         FROM exams e ORDER BY e.id
     """)
     return cursor.fetchall()
 
 
+def _print_exam_table(exams):
+    print(f"  {'ID':>4}  {'Year':>5}  {'Qs':>4}  {'Migrated':>10}  Label")
+    print("  " + "-" * 70)
+    for e in exams:
+        shown = e["label"] or f"{e['video_filename']} (session {e['session_index']})"
+        mig = e["migrated_at"]
+        mig_str = str(mig)[:10] if mig else "-"
+        print(f"  {e['id']:>4}  {str(e['year'] or ''):>5}  {e['q_count']:>4}  "
+              f"{mig_str:>10}  {shown}  [{e['status']}]")
+
+
 def export(args):
     conn = _connect()
+    _ensure_migrated_column(conn.cursor(), conn)
     cursor = conn.cursor(dictionary=True)
 
     exams = _list_exams(cursor)
@@ -93,23 +128,26 @@ def export(args):
         sys.exit("No exams found in the database — nothing to migrate.")
 
     print("\nAvailable exams / sessions:")
-    print(f"  {'ID':>4}  {'Year':>5}  {'Qs':>4}  Label")
-    print("  " + "-" * 60)
-    for e in exams:
-        shown = e["label"] or f"{e['video_filename']} (session {e['session_index']})"
-        print(f"  {e['id']:>4}  {str(e['year'] or ''):>5}  {e['q_count']:>4}  {shown}  [{e['status']}]")
+    _print_exam_table(exams)
     print()
 
     valid_ids = {e["id"] for e in exams}
+    new_ids = sorted(e["id"] for e in exams if not e["migrated_at"])
 
     if "--all" in args:
         exam_ids = sorted(valid_ids)
+    elif "--new" in args:
+        exam_ids = new_ids
     elif args:
         exam_ids = _parse_ids(args, valid_ids)
     else:
-        raw = input("Enter exam IDs to migrate (space/comma separated), or 'all': ").strip()
-        if raw.lower() in ("all", "--all", "*"):
+        raw = input("Enter exam IDs to migrate (space/comma separated), "
+                    "'new' for un-migrated, or 'all': ").strip()
+        low = raw.lower()
+        if low in ("all", "--all", "*"):
             exam_ids = sorted(valid_ids)
+        elif low in ("new", "--new"):
+            exam_ids = new_ids
         else:
             exam_ids = _parse_ids(raw.replace(",", " ").split(), valid_ids)
 
@@ -130,8 +168,6 @@ def export(args):
         "questions": fetch("questions", f"WHERE exam_id IN ({id_list})"),
         "unidentified_frames": fetch("unidentified_frames", f"WHERE exam_id IN ({id_list})"),
     }
-    cursor.close()
-    conn.close()
 
     # Pack data + image folders into a single zip.
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -163,10 +199,18 @@ def export(args):
         ] + [f"  exam_{eid}: {cnt} files" for eid, cnt in img_counts.items()]
         zf.writestr(MANIFEST_NAME, "\n".join(manifest))
 
+    # Bundle written successfully — stamp the exams as migrated on this machine.
+    cursor.execute(
+        f"UPDATE exams SET migrated_at = NOW() WHERE id IN ({id_list})")
+    conn.commit()
+    cursor.close()
+    conn.close()
+
     print("\n" + "=" * 60)
     print(f"  BUNDLE READY:  {bundle}")
     print(f"  Exams: {len(exam_ids)}  |  questions: {len(data['questions'])}"
           f"  |  images: {sum(img_counts.values())} files")
+    print(f"  Marked migrated_at on {len(exam_ids)} exam(s).")
     if missing:
         print(f"  NOTE: no image folder on disk for exam(s) {missing} "
               f"(DB rows still included).")
@@ -325,7 +369,9 @@ def _merge(cursor, data):
         if row:
             stats["exams_skipped"] += 1
             continue
-        exam_map[e["id"]] = _insert(cursor, "exams", e, {})
+        # migrated_at is a per-machine flag; the freshly-imported copy hasn't
+        # been migrated onward, so it starts NULL on the target.
+        exam_map[e["id"]] = _insert(cursor, "exams", e, {"migrated_at": None})
         stats["exams_added"] += 1
 
     # Questions — only for newly added exams.
@@ -356,6 +402,47 @@ def _merge(cursor, data):
     return exam_map, stats
 
 
+# ──────────────────────────── list / unmark ───────────────────────────
+
+def cmd_list(args):
+    conn = _connect()
+    _ensure_migrated_column(conn.cursor(), conn)
+    cursor = conn.cursor(dictionary=True)
+    exams = _list_exams(cursor)
+    cursor.close()
+    conn.close()
+    if not exams:
+        print("No exams in the database.")
+        return
+    pending = [e for e in exams if not e["migrated_at"]]
+    print("\nExams / sessions:")
+    _print_exam_table(exams)
+    print(f"\n  {len(exams)} total | {len(pending)} not yet migrated"
+          f"{' (' + ', '.join(str(e['id']) for e in pending) + ')' if pending else ''}")
+
+
+def unmark(args):
+    conn = _connect()
+    _ensure_migrated_column(conn.cursor(), conn)
+    cursor = conn.cursor()
+    if "--all" in args:
+        cursor.execute("UPDATE exams SET migrated_at = NULL")
+    else:
+        try:
+            ids = [int(a) for a in args if not a.startswith("--")]
+        except ValueError:
+            sys.exit("Usage: python migrate.py unmark <id> [<id> ...] | --all")
+        if not ids:
+            sys.exit("Usage: python migrate.py unmark <id> [<id> ...] | --all")
+        id_list = ", ".join(str(i) for i in ids)
+        cursor.execute(f"UPDATE exams SET migrated_at = NULL WHERE id IN ({id_list})")
+    n = cursor.rowcount
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print(f"Cleared migrated flag on {n} exam(s). They'll show up under `export --new` again.")
+
+
 # ─────────────────────────────── entry ────────────────────────────────
 
 def main():
@@ -367,9 +454,13 @@ def main():
         export(rest)
     elif mode == "import":
         do_import(rest)
+    elif mode == "list":
+        cmd_list(rest)
+    elif mode == "unmark":
+        unmark(rest)
     else:
         print(__doc__)
-        sys.exit(f"Unknown mode: {mode!r} (use 'export' or 'import').")
+        sys.exit(f"Unknown mode: {mode!r} (use export / import / list / unmark).")
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ def init_db():
                 year INT NULL,
                 label VARCHAR(255),
                 status ENUM('in_progress','complete') DEFAULT 'in_progress',
+                migrated_at TIMESTAMP NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY unique_session (video_filename, session_index)
             )
@@ -136,6 +137,15 @@ def init_db():
             print("Migrating: Adding year column to exams...")
             cursor.execute("ALTER TABLE exams ADD COLUMN year INT NULL")
             cursor.execute("UPDATE exams SET year = 2024 WHERE year IS NULL")
+            conn.commit()
+
+        # ── Lazy migration for migrated_at column (used by migrate.py) ──
+        try:
+            cursor.execute("SELECT migrated_at FROM exams LIMIT 1")
+            cursor.fetchall()
+        except mysql.connector.Error:
+            print("Migrating: Adding migrated_at column to exams...")
+            cursor.execute("ALTER TABLE exams ADD COLUMN migrated_at TIMESTAMP NULL")
             conn.commit()
 
         # ── Existing legacy migration (exam_id) ──
