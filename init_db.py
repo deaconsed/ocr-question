@@ -111,6 +111,37 @@ def init_db():
         """)
         print("Table 'unidentified_frames' ensured.")
 
+        # Create verifier assignment tables (session-scoped subject + whole-session shortcuts)
+        # A subject assignment is always scoped to one specific exam session.
+        cursor.execute("DROP TABLE IF EXISTS verifier_subjects")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS verifier_assignments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                exam_id INT NOT NULL,
+                subject_id INT NOT NULL,
+                assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_user_exam_subject (user_id, exam_id, subject_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE,
+                FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+            )
+        """)
+        print("Table 'verifier_assignments' ensured.")
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS verifier_exams (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                exam_id INT NOT NULL,
+                assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_user_exam (user_id, exam_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
+            )
+        """)
+        print("Table 'verifier_exams' ensured.")
+
         # ── Lazy migration for new workflow columns ──
         workflow_cols = [
             ("teacher_answer", "VARCHAR(10) NULL"),

@@ -7,3 +7,6 @@ openai
 python-dotenv
 flask
 mysql-connector-python
+python-docx
+matplotlib
+pillow

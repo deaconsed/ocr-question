@@ -237,6 +237,52 @@
         }
         .image-modal.open { display: flex; }
         .image-modal img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
+
+        /* Assignment modal */
+        .assign-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1100;
+            display: none; align-items: center; justify-content: center;
+        }
+        .assign-modal.open { display: flex; }
+        .assign-modal-card {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 12px; padding: 22px; width: min(680px, 92vw);
+            max-height: 88vh; overflow-y: auto;
+        }
+        .assign-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 8px; margin: 10px 0 18px;
+        }
+        .assign-item {
+            display: flex; align-items: center; gap: 8px; font-size: 0.85rem;
+            padding: 8px 10px; background: var(--bg-element);
+            border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+        }
+        .assign-item input { cursor: pointer; }
+        .assign-modal-card select {
+            padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
+            background: var(--bg-element); color: white; font-size: 0.85rem; width: 100%;
+        }
+        .assign-current-chip {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 6px 10px; margin: 0 6px 6px 0;
+            background: var(--bg-element); border: 1px solid var(--border);
+            border-radius: 8px; font-size: 0.82rem;
+        }
+        .assign-current-chip button {
+            background: transparent; border: none; color: #ef4444;
+            cursor: pointer; font-size: 1rem; line-height: 1; padding: 0;
+        }
+        .assign-current-empty { color: var(--text-muted); font-size: 0.8rem; }
+        .assign-modal-card h4 {
+            margin: 0 0 2px 0; color: var(--text-muted);
+            font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .assign-user-btn { background:#6366f1; color:white; border:none; padding:4px 10px; }
+        #tab-export select {
+            padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border);
+            background: var(--bg-element); color: white; font-size: 0.9rem; width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -251,6 +297,7 @@
             <button class="tab-btn" data-tab="folder">Folder Import</button>
             <button class="tab-btn" data-tab="users">User Management</button>
             <button class="tab-btn" data-tab="unidentified">Manual Review</button>
+            <button class="tab-btn" data-tab="export">Export</button>
             <button class="tab-btn" data-tab="database">Database</button>
         </div>
 
@@ -387,6 +434,30 @@
             <div id="review-list" class="review-list" style="flex:1; overflow-y:auto; min-height:0;"></div>
         </div>
 
+        <!-- Export Tab -->
+        <div class="tab-content" id="tab-export">
+            <div class="user-manager-card">
+                <h3 style="margin:0 0 4px 0;">Export Subject to Word (.docx)</h3>
+                <p style="margin:0 0 16px 0; color: var(--text-muted); font-size: 0.85rem;">
+                    Pick a session and one of its subjects to download a Word document of its
+                    questions. Mathematical formulas are rendered correctly and any question
+                    diagrams/images are embedded.
+                </p>
+                <div style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+                    <div class="form-group" style="min-width:220px;">
+                        <label>Session</label>
+                        <select id="export-sess"><option value="">— pick a session —</option></select>
+                    </div>
+                    <div class="form-group" style="min-width:220px;">
+                        <label>Subject</label>
+                        <select id="export-subj" disabled><option value="">Select a session first…</option></select>
+                    </div>
+                    <button id="btn-export-docx" class="btn btn-primary" disabled style="height:38px;">Download .docx</button>
+                </div>
+                <div id="export-status" style="margin-top:14px; font-size:0.85rem; color: var(--text-muted);"></div>
+            </div>
+        </div>
+
         <!-- Database Tab -->
         <div class="tab-content" id="tab-database">
             <div class="user-manager-card">
@@ -434,6 +505,45 @@
         <img id="image-modal-img" alt="">
     </div>
 
+    <!-- Assignment modal (used by User Management tab) -->
+    <div id="assign-modal" class="assign-modal">
+        <div class="assign-modal-card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h3 id="assign-modal-title" style="margin:0;">Assign Work</h3>
+                <button id="assign-close" class="btn btn-secondary">Close</button>
+            </div>
+            <p style="color:var(--text-muted); font-size:0.8rem; margin:0 0 16px 0;">
+                Assigned subjects and sessions appear as quick-access shortcuts on this user's
+                dashboard so they can jump straight into verification. They do not restrict access.
+            </p>
+
+            <h4>Subject assignments</h4>
+            <p style="color:var(--text-muted); font-size:0.78rem; margin:4px 0 10px 0;">
+                Pick a session, then a subject within it, and click Add. Repeat to assign more.
+            </p>
+            <div style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
+                <div class="form-group" style="flex:1; min-width:170px;">
+                    <label>Session</label>
+                    <select id="assign-sess-select"></select>
+                </div>
+                <div class="form-group" style="flex:1; min-width:170px;">
+                    <label>Subject</label>
+                    <select id="assign-subj-select" disabled>
+                        <option value="">Select a session first…</option>
+                    </select>
+                </div>
+                <button id="assign-add-btn" class="btn btn-secondary" style="height:38px;">Add</button>
+            </div>
+            <div id="assign-current-list" style="margin:14px 0 20px;"></div>
+
+            <h4>Whole sessions (optional)</h4>
+            <div id="assign-exams" class="assign-grid"></div>
+            <div style="margin-top:8px; display:flex; gap:10px; justify-content:flex-end;">
+                <button id="assign-save" class="btn btn-primary">Save Assignments</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // Tab Switching
@@ -451,6 +561,7 @@
                     if (targetTab === 'users') fetchUsers();
                     if (targetTab === 'database') fetchSessions();
                     if (targetTab === 'unidentified') reviewInit();
+                    if (targetTab === 'export') exportInit();
                 });
             });
 
@@ -643,6 +754,7 @@
                                 <td><span class="role-badge role-${user.role}">${user.role}</span></td>
                                 <td>${new Date(user.created_at).toLocaleString()}</td>
                                 <td>
+                                    ${user.role !== 'admin' ? `<button class="btn btn-secondary assign-user-btn" data-id="${user.id}" data-username="${escapeHtml(user.username)}" style="margin-right:6px;">Assign</button>` : ''}
                                     <button class="btn btn-secondary delete-user-btn" data-id="${user.id}" style="background:#ef4444; color:white; border:none; padding:4px 10px;">Delete</button>
                                 </td>
                             `;
@@ -651,6 +763,9 @@
 
                         document.querySelectorAll('.delete-user-btn').forEach(btn => {
                             btn.addEventListener('click', () => deleteUser(btn.dataset.id));
+                        });
+                        document.querySelectorAll('.assign-user-btn').forEach(btn => {
+                            btn.addEventListener('click', () => openAssignModal(btn.dataset.id, btn.dataset.username));
                         });
                     });
             }
@@ -691,6 +806,148 @@
                         else alert(data.error);
                     });
             }
+
+            // ── Assignment Modal Logic ──
+            const assignModal = document.getElementById('assign-modal');
+            const assignSessSelect = document.getElementById('assign-sess-select');
+            const assignSubjSelect = document.getElementById('assign-subj-select');
+            const assignAddBtn = document.getElementById('assign-add-btn');
+            const assignCurrentList = document.getElementById('assign-current-list');
+            const assignExamsEl = document.getElementById('assign-exams');
+            const assignTitle = document.getElementById('assign-modal-title');
+            const assignSaveBtn = document.getElementById('assign-save');
+            let assignUserId = null;
+            let assignExams = [];        // [{id, year, label, ...}]
+            let assignWorking = [];      // [{exam_id, subject_id, subject_name, exam_label}]
+
+            function examLabel(exam) {
+                return (exam.year ? exam.year + ' — ' : '') + (exam.label || ('Exam ' + exam.id));
+            }
+
+            function openAssignModal(userId, username) {
+                assignUserId = userId;
+                assignWorking = [];
+                assignTitle.textContent = `Assign Work — ${username}`;
+                assignCurrentList.innerHTML = '<span class="assign-current-empty">Loading…</span>';
+                assignExamsEl.innerHTML = '';
+                assignSubjSelect.innerHTML = '<option value="">Select a session first…</option>';
+                assignSubjSelect.disabled = true;
+                assignModal.classList.add('open');
+
+                Promise.all([
+                    fetch('/api/exams').then(r => r.json()),
+                    fetch(`/api/admin/users/${userId}/assignments`).then(r => r.json())
+                ]).then(([exams, current]) => {
+                    assignExams = exams || [];
+                    assignSessSelect.innerHTML = '<option value="">— pick a session —</option>' +
+                        assignExams.map(e => `<option value="${e.id}">${escapeHtml(examLabel(e))}</option>`).join('');
+
+                    // Seed working list from existing subject assignments.
+                    assignWorking = (current.assignments || []).map(a => ({
+                        exam_id: a.exam_id,
+                        subject_id: a.subject_id,
+                        subject_name: a.subject_name,
+                        exam_label: (a.exam_year ? a.exam_year + ' — ' : '') + (a.exam_label || ('Exam ' + a.exam_id))
+                    }));
+                    renderCurrentAssignments();
+
+                    // Whole-session checkboxes.
+                    const examSet = new Set(current.exam_ids || []);
+                    assignExamsEl.innerHTML = assignExams.length
+                        ? assignExams.map(e => `
+                            <label class="assign-item">
+                                <input type="checkbox" class="assign-exam-cb" value="${e.id}" ${examSet.has(e.id) ? 'checked' : ''}>
+                                ${escapeHtml(examLabel(e))}
+                            </label>`).join('')
+                        : '<span style="color:var(--text-muted)">No exam sessions yet.</span>';
+                }).catch(err => {
+                    assignCurrentList.innerHTML = `<span style="color:#ef4444">Failed to load: ${escapeHtml(err.message)}</span>`;
+                });
+            }
+
+            function renderCurrentAssignments() {
+                if (assignWorking.length === 0) {
+                    assignCurrentList.innerHTML = '<span class="assign-current-empty">No subject assignments yet.</span>';
+                    return;
+                }
+                assignCurrentList.innerHTML = assignWorking.map((a, i) => `
+                    <span class="assign-current-chip">
+                        <span><strong>${escapeHtml(a.subject_name)}</strong> · ${escapeHtml(a.exam_label)}</span>
+                        <button type="button" data-idx="${i}" title="Remove">✕</button>
+                    </span>`).join('');
+                assignCurrentList.querySelectorAll('button[data-idx]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        assignWorking.splice(parseInt(btn.dataset.idx), 1);
+                        renderCurrentAssignments();
+                    });
+                });
+            }
+
+            assignSessSelect.addEventListener('change', () => {
+                const examId = assignSessSelect.value;
+                assignSubjSelect.innerHTML = '<option value="">Loading…</option>';
+                assignSubjSelect.disabled = true;
+                if (!examId) {
+                    assignSubjSelect.innerHTML = '<option value="">Select a session first…</option>';
+                    return;
+                }
+                fetch(`/api/admin/exam_subjects?exam_id=${examId}`)
+                    .then(r => r.json())
+                    .then(subjects => {
+                        if (!Array.isArray(subjects) || subjects.length === 0) {
+                            assignSubjSelect.innerHTML = '<option value="">No subjects in this session</option>';
+                            return;
+                        }
+                        assignSubjSelect.innerHTML = '<option value="">— pick a subject —</option>' +
+                            subjects.map(s => `<option value="${s.id}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
+                        assignSubjSelect.disabled = false;
+                    })
+                    .catch(err => { assignSubjSelect.innerHTML = `<option value="">Error: ${escapeHtml(err.message)}</option>`; });
+            });
+
+            assignAddBtn.addEventListener('click', () => {
+                const examId = parseInt(assignSessSelect.value);
+                const subjectId = parseInt(assignSubjSelect.value);
+                if (!examId) { alert('Pick a session.'); return; }
+                if (!subjectId) { alert('Pick a subject.'); return; }
+                if (assignWorking.some(a => a.exam_id === examId && a.subject_id === subjectId)) {
+                    alert('That subject is already assigned for this session.');
+                    return;
+                }
+                const exam = assignExams.find(e => e.id === examId);
+                const subjOpt = assignSubjSelect.options[assignSubjSelect.selectedIndex];
+                assignWorking.push({
+                    exam_id: examId,
+                    subject_id: subjectId,
+                    subject_name: subjOpt ? subjOpt.dataset.name : ('Subject ' + subjectId),
+                    exam_label: exam ? examLabel(exam) : ('Exam ' + examId)
+                });
+                renderCurrentAssignments();
+                assignSubjSelect.value = '';
+            });
+
+            document.getElementById('assign-close').addEventListener('click', () => assignModal.classList.remove('open'));
+            assignModal.addEventListener('click', (e) => { if (e.target === assignModal) assignModal.classList.remove('open'); });
+
+            assignSaveBtn.addEventListener('click', () => {
+                if (!assignUserId) return;
+                const assignments = assignWorking.map(a => ({ exam_id: a.exam_id, subject_id: a.subject_id }));
+                const exam_ids = [...assignExamsEl.querySelectorAll('.assign-exam-cb:checked')].map(cb => parseInt(cb.value));
+                assignSaveBtn.disabled = true;
+                assignSaveBtn.textContent = 'Saving...';
+                fetch(`/api/admin/users/${assignUserId}/assignments`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ assignments, exam_ids })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) assignModal.classList.remove('open');
+                    else alert('Error: ' + (data.error || 'unknown'));
+                })
+                .catch(err => alert('Network error: ' + err.message))
+                .finally(() => { assignSaveBtn.disabled = false; assignSaveBtn.textContent = 'Save Assignments'; });
+            });
 
             // ── Folder Import Logic ──
             const folderPathInput = document.getElementById('folder-path');
@@ -1119,6 +1376,96 @@
                     .finally(() => {
                         btnBackupDb.disabled = false;
                         btnBackupDb.textContent = originalLabel;
+                    });
+            });
+
+            // ── Export Tab Logic ──
+            const exportSess = document.getElementById('export-sess');
+            const exportSubj = document.getElementById('export-subj');
+            const btnExportDocx = document.getElementById('btn-export-docx');
+            const exportStatus = document.getElementById('export-status');
+            let exportInitialized = false;
+
+            function exportInit() {
+                if (exportInitialized) return;
+                exportInitialized = true;
+                fetch('/api/exams')
+                    .then(r => r.json())
+                    .then(exams => {
+                        exportSess.innerHTML = '<option value="">— pick a session —</option>' +
+                            (exams || []).map(e => {
+                                const label = (e.year ? e.year + ' — ' : '') + (e.label || ('Exam ' + e.id));
+                                return `<option value="${e.id}">${escapeHtml(label)}</option>`;
+                            }).join('');
+                    })
+                    .catch(err => { exportStatus.textContent = 'Failed to load sessions: ' + err.message; });
+            }
+
+            function refreshExportButton() {
+                btnExportDocx.disabled = !(exportSess.value && exportSubj.value);
+            }
+
+            exportSess.addEventListener('change', () => {
+                exportStatus.textContent = '';
+                btnExportDocx.disabled = true;
+                exportSubj.disabled = true;
+                exportSubj.innerHTML = '<option value="">Loading…</option>';
+                if (!exportSess.value) {
+                    exportSubj.innerHTML = '<option value="">Select a session first…</option>';
+                    return;
+                }
+                fetch(`/api/admin/exam_subjects?exam_id=${exportSess.value}`)
+                    .then(r => r.json())
+                    .then(subjects => {
+                        if (!Array.isArray(subjects) || subjects.length === 0) {
+                            exportSubj.innerHTML = '<option value="">No subjects in this session</option>';
+                            return;
+                        }
+                        exportSubj.innerHTML = '<option value="">— pick a subject —</option>' +
+                            subjects.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
+                        exportSubj.disabled = false;
+                    })
+                    .catch(err => { exportSubj.innerHTML = `<option value="">Error: ${escapeHtml(err.message)}</option>`; });
+            });
+
+            exportSubj.addEventListener('change', refreshExportButton);
+
+            btnExportDocx.addEventListener('click', () => {
+                const examId = exportSess.value;
+                const subject = exportSubj.value;
+                if (!examId || !subject) return;
+
+                btnExportDocx.disabled = true;
+                const originalLabel = btnExportDocx.textContent;
+                btnExportDocx.textContent = 'Generating…';
+                exportStatus.textContent = 'Rendering formulas and building the document — this can take a moment…';
+
+                const url = `/api/admin/export_docx?exam_id=${encodeURIComponent(examId)}&subject=${encodeURIComponent(subject)}`;
+                fetch(url)
+                    .then(res => {
+                        if (!res.ok) {
+                            return res.json().then(j => { throw new Error(j.error || `HTTP ${res.status}`); });
+                        }
+                        const cd = res.headers.get('Content-Disposition') || '';
+                        const match = cd.match(/filename="?([^"]+)"?/);
+                        const filename = match ? match[1] : 'export.docx';
+                        return res.blob().then(blob => ({ blob, filename }));
+                    })
+                    .then(({ blob, filename }) => {
+                        const dl = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = dl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(dl);
+                        exportStatus.textContent = `Downloaded ${filename}`;
+                    })
+                    .catch(err => { exportStatus.textContent = 'Export failed: ' + err.message; })
+                    .finally(() => {
+                        btnExportDocx.textContent = originalLabel;
+                        refreshExportButton();
                     });
             });
         });

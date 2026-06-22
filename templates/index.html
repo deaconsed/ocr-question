@@ -19,6 +19,25 @@
 
     <!-- Custom Styles -->
     <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        #my-assignments-section { padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+        .assign-group { margin-bottom: 10px; }
+        .assign-group-title {
+            font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.04em; color: var(--text-muted); margin: 6px 0 4px;
+        }
+        .assign-chip {
+            display: flex; align-items: center; gap: 8px; width: 100%;
+            text-align: left; padding: 8px 10px; margin-bottom: 6px;
+            background: var(--bg-element); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text); cursor: pointer;
+            font-size: 0.85rem; transition: all 0.2s;
+        }
+        .assign-chip:hover { border-color: var(--primary); background: rgba(99,102,241,0.08); }
+        .assign-chip .assign-chip-sub { font-size: 0.72rem; color: var(--text-muted); }
+        .assign-chip.session { border-left: 3px solid var(--primary); }
+        .assign-empty { font-size: 0.78rem; color: var(--text-muted); padding: 4px 0; }
+    </style>
 </head>
 <body>
     <div class="app-container">
@@ -39,6 +58,11 @@
                 <input type="hidden" id="current-user-role" value="{{ user.role }}">
             </div>
             
+            <div class="filter-section" id="my-assignments-section" style="display: none;">
+                <label>⭐ Your Assignments</label>
+                <div id="my-assignments"></div>
+            </div>
+
             <div class="filter-section">
                 <label for="year-select">Select Year</label>
                 <select id="year-select">

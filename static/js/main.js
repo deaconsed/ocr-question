@@ -73,7 +73,114 @@ document.addEventListener('DOMContentLoaded', () => {
             allExams = exams;
             populateYearSelect();
             populateExamSelect(); // Show all by default
+            loadMyAssignments();
         });
+
+    // ── Assignments (quick-access shortcuts) ──
+    const assignmentsSection = document.getElementById('my-assignments-section');
+    const assignmentsContainer = document.getElementById('my-assignments');
+
+    function loadMyAssignments() {
+        fetch('/api/my_assignments')
+            .then(res => res.json())
+            .then(data => renderAssignments(data))
+            .catch(() => { /* non-fatal: dashboard still works via the dropdowns */ });
+    }
+
+    function renderAssignments(data) {
+        const assignments = (data && data.assignments) || [];
+        const exams = (data && data.exams) || [];
+        if (assignments.length === 0 && exams.length === 0) {
+            assignmentsSection.style.display = 'none';
+            return;
+        }
+        assignmentsContainer.innerHTML = '';
+
+        if (assignments.length > 0) {
+            const group = document.createElement('div');
+            group.className = 'assign-group';
+            group.innerHTML = '<div class="assign-group-title">Subjects</div>';
+            // Each assignment is one subject within one specific session.
+            assignments.forEach(a => {
+                const label = a.subject_name.replace(/_/g, ' ').toUpperCase();
+                const sessionLabel = `${a.exam_year ? a.exam_year + ' · ' : ''}${a.exam_label || 'Session ' + a.session_index}`;
+                const chip = document.createElement('button');
+                chip.className = 'assign-chip';
+                chip.innerHTML = `<span>📘 ${label}</span><span class="assign-chip-sub">${sessionLabel}</span>`;
+                chip.onclick = () => gotoSubject(a.exam_id, a.subject_name);
+                group.appendChild(chip);
+            });
+            assignmentsContainer.appendChild(group);
+        }
+
+        if (exams.length > 0) {
+            const group = document.createElement('div');
+            group.className = 'assign-group';
+            group.innerHTML = '<div class="assign-group-title">Sessions</div>';
+            exams.forEach(ex => {
+                const chip = document.createElement('button');
+                chip.className = 'assign-chip session';
+                const sessionLabel = `${ex.year ? ex.year + ' · ' : ''}${ex.label || 'Session ' + ex.session_index}`;
+                chip.innerHTML = `<span>🗂️ ${sessionLabel}</span>`;
+                chip.onclick = () => gotoExam(ex.id);
+                group.appendChild(chip);
+            });
+            assignmentsContainer.appendChild(group);
+        }
+
+        assignmentsSection.style.display = 'block';
+    }
+
+    // Jump straight to a subject within a specific exam, syncing the dropdowns.
+    function gotoSubject(examId, subjectName) {
+        const exam = allExams.find(e => e.id == examId);
+        if (exam && exam.year) {
+            yearSelect.value = exam.year;
+            populateExamSelect(exam.year);
+        } else {
+            yearSelect.value = '';
+            populateExamSelect();
+        }
+        examSelect.disabled = false;
+        examSelect.value = examId;
+        currentExamId = String(examId);
+        currentSubject = null;
+        questionsData = [];
+        currentQuestionIndex = -1;
+        subjectSelect.disabled = false;
+        subjectSelect.innerHTML = '<option value="" disabled selected>Loading subjects...</option>';
+        clearWorkspace();
+
+        fetch(`/api/subjects?exam_id=${examId}`)
+            .then(res => res.json())
+            .then(subjects => {
+                subjectSelect.innerHTML = '<option value="" disabled>Select a subject...</option>';
+                subjects.forEach(sub => {
+                    const opt = document.createElement('option');
+                    opt.value = sub;
+                    opt.textContent = sub.replace(/_/g, ' ').toUpperCase();
+                    subjectSelect.appendChild(opt);
+                });
+                subjectSelect.value = subjectName;
+                currentSubject = subjectName;
+                loadQuestions(subjectName);
+            });
+    }
+
+    // Jump to an exam session: select it and load its subject list.
+    function gotoExam(examId) {
+        const exam = allExams.find(e => e.id == examId);
+        if (exam && exam.year) {
+            yearSelect.value = exam.year;
+            populateExamSelect(exam.year);
+        } else {
+            yearSelect.value = '';
+            populateExamSelect();
+        }
+        examSelect.disabled = false;
+        examSelect.value = examId;
+        examSelect.dispatchEvent(new Event('change'));
+    }
 
     function populateYearSelect() {
         const years = [...new Set(allExams.map(e => e.year).filter(y => y))].sort((a, b) => b - a);

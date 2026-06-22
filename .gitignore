@@ -2,3 +2,8 @@
 venv
 extracted_frames
 2026602
+__pycache__/
+*.pyc
+*.docx
+~$*
+extraction_state.json

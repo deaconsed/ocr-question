@@ -54,7 +54,49 @@ def _ensure_unidentified_table():
         conn.close()
 
 
+def _ensure_assignment_tables():
+    """Idempotent: create the verifier assignment tables if missing, so users on
+    existing databases get the feature without re-running init_db.py."""
+    conn = get_db_connection()
+    if not conn:
+        return
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DROP TABLE IF EXISTS verifier_subjects")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS verifier_assignments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                exam_id INT NOT NULL,
+                subject_id INT NOT NULL,
+                assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_user_exam_subject (user_id, exam_id, subject_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE,
+                FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS verifier_exams (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                exam_id INT NOT NULL,
+                assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_user_exam (user_id, exam_id),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE
+            )
+        """)
+        conn.commit()
+        cursor.close()
+    except Exception as e:
+        print(f"[startup] Could not ensure verifier assignment tables: {e}")
+    finally:
+        conn.close()
+
+
 _ensure_unidentified_table()
+_ensure_assignment_tables()
 
 def login_required(f):
     @wraps(f)
@@ -109,6 +151,42 @@ def logout():
 @login_required
 def index():
     return render_template("index.html", user=session)
+
+@app.route("/api/my_assignments", methods=["GET"])
+@login_required
+def my_assignments():
+    """Assignments for the logged-in user: session-scoped subjects (each a subject
+    within one specific exam session) and whole sessions. Used to render the
+    quick-access panel on the verifier dashboard."""
+    user_id = session.get("user_id")
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"assignments": [], "exams": []})
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT va.exam_id, va.subject_id, s.name AS subject_name,
+                   e.year AS exam_year, e.label AS exam_label, e.session_index
+            FROM verifier_assignments va
+            JOIN subjects s ON va.subject_id = s.id
+            JOIN exams e ON va.exam_id = e.id
+            WHERE va.user_id = %s
+            ORDER BY e.year DESC, e.session_index ASC, s.name ASC
+        """, (user_id,))
+        assignments = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT e.id, e.year, e.label, e.session_index
+            FROM verifier_exams ve
+            JOIN exams e ON ve.exam_id = e.id
+            WHERE ve.user_id = %s
+            ORDER BY e.year DESC, e.session_index ASC
+        """, (user_id,))
+        exams = cursor.fetchall()
+        return jsonify({"assignments": assignments, "exams": exams})
+    finally:
+        cursor.close()
+        conn.close()
 
 # --- Exam Routes ---
 @app.route("/api/exams", methods=["GET"])
@@ -791,6 +869,103 @@ def delete_user(user_id):
     conn.close()
     return jsonify({"success": True})
 
+# --- Verifier Assignment Routes ---
+
+@app.route("/api/admin/exam_subjects", methods=["GET"])
+@admin_required
+def admin_exam_subjects():
+    """Subjects (id + name) present in a given exam session, for the assignment UI."""
+    exam_id = request.args.get("exam_id", type=int)
+    if not exam_id:
+        return jsonify({"error": "exam_id is required"}), 400
+    conn = get_db_connection()
+    if not conn:
+        return jsonify([])
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("""
+        SELECT DISTINCT s.id, s.name
+        FROM subjects s
+        JOIN questions q ON q.subject_id = s.id
+        WHERE q.exam_id = %s
+        ORDER BY s.name
+    """, (exam_id,))
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route("/api/admin/users/<int:user_id>/assignments", methods=["GET"])
+@admin_required
+def admin_get_assignments(user_id):
+    """Return the session-scoped subject assignments and whole-session assignments
+    currently held by a user (with display labels)."""
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT va.exam_id, va.subject_id, s.name AS subject_name,
+                   e.year AS exam_year, e.label AS exam_label, e.session_index
+            FROM verifier_assignments va
+            JOIN subjects s ON va.subject_id = s.id
+            JOIN exams e ON va.exam_id = e.id
+            WHERE va.user_id = %s
+            ORDER BY e.year DESC, e.session_index ASC, s.name ASC
+        """, (user_id,))
+        assignments = cursor.fetchall()
+        cursor.execute("SELECT exam_id FROM verifier_exams WHERE user_id = %s", (user_id,))
+        exam_ids = [r["exam_id"] for r in cursor.fetchall()]
+        return jsonify({"assignments": assignments, "exam_ids": exam_ids})
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route("/api/admin/users/<int:user_id>/assignments", methods=["POST"])
+@admin_required
+def admin_set_assignments(user_id):
+    """Replace a user's assignments.
+    Body: {assignments: [{exam_id:int, subject_id:int}], exam_ids: [int]}"""
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        pairs = {(int(a["exam_id"]), int(a["subject_id"]))
+                 for a in (data.get("assignments") or [])}
+        exam_ids = {int(x) for x in (data.get("exam_ids") or [])}
+    except (TypeError, ValueError, KeyError):
+        return jsonify({"success": False, "error": "Invalid assignment payload"}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"success": False, "error": "Database connection failed"}), 500
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+        if not cursor.fetchone():
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        cursor.execute("DELETE FROM verifier_assignments WHERE user_id = %s", (user_id,))
+        for exam_id, subject_id in pairs:
+            cursor.execute(
+                "INSERT INTO verifier_assignments (user_id, exam_id, subject_id) VALUES (%s, %s, %s)",
+                (user_id, exam_id, subject_id))
+
+        cursor.execute("DELETE FROM verifier_exams WHERE user_id = %s", (user_id,))
+        for eid in exam_ids:
+            cursor.execute(
+                "INSERT INTO verifier_exams (user_id, exam_id) VALUES (%s, %s)",
+                (user_id, eid))
+
+        conn.commit()
+        return jsonify({"success": True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 400
+    finally:
+        cursor.close()
+        conn.close()
+
 # --- Admin Session / Database Routes ---
 
 @app.route("/api/admin/exams/<int:exam_id>", methods=["DELETE"])
@@ -952,6 +1127,31 @@ def admin_db_backup():
     response = Response(sql_text, mimetype="application/sql")
     response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     response.headers["X-Backup-Source"] = "mysqldump" if used_mysqldump else "python"
+    return response
+
+
+@app.route("/api/admin/export_docx", methods=["GET"])
+@admin_required
+def admin_export_docx():
+    """Export one subject within one session to a .docx download. Formulas are
+    rendered as inline images and question diagrams are embedded."""
+    exam_id = request.args.get("exam_id", type=int)
+    subject = request.args.get("subject")
+    if not exam_id or not subject:
+        return jsonify({"error": "exam_id and subject are required"}), 400
+
+    try:
+        from docx_exporter import build_subject_docx
+        buf, filename = build_subject_docx(exam_id, subject)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": f"Export failed: {e}"}), 500
+
+    response = Response(
+        buf.read(),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
 
