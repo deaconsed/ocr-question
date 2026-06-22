@@ -1509,7 +1509,11 @@
                             return;
                         }
                         exportSubj.innerHTML = '<option value="">— pick a subject —</option>' +
-                            subjects.map(s => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
+                            subjects.map(s => {
+                                const mark = s.all_verified ? '✅ ' : '⚠️ ';
+                                const counts = `(${s.verified_count}/${s.total_questions} verified)`;
+                                return `<option value="${escapeHtml(s.name)}">${mark}${escapeHtml(s.name)} ${counts}</option>`;
+                            }).join('');
                         exportSubj.disabled = false;
                     })
                     .catch(err => { exportSubj.innerHTML = `<option value="">Error: ${escapeHtml(err.message)}</option>`; });

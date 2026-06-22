@@ -806,7 +806,8 @@ def delete_user(user_id):
 @app.route("/api/admin/exam_subjects", methods=["GET"])
 @admin_required
 def admin_exam_subjects():
-    """Subjects (id + name) present in a given exam session, for the assignment UI."""
+    """Subjects present in a given exam session, with verification progress.
+    Each row: {id, name, total_questions, verified_count, all_verified}."""
     exam_id = request.args.get("exam_id", type=int)
     if not exam_id:
         return jsonify({"error": "exam_id is required"}), 400
@@ -815,15 +816,24 @@ def admin_exam_subjects():
         return jsonify([])
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
-        SELECT DISTINCT s.id, s.name
+        SELECT s.id, s.name,
+               COUNT(q.id) AS total_questions,
+               SUM(q.verified = 1) AS verified_count
         FROM subjects s
         JOIN questions q ON q.subject_id = s.id
         WHERE q.exam_id = %s
+        GROUP BY s.id, s.name
         ORDER BY s.name
     """, (exam_id,))
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
+    for r in rows:
+        total = int(r["total_questions"] or 0)
+        verified = int(r["verified_count"] or 0)
+        r["total_questions"] = total
+        r["verified_count"] = verified
+        r["all_verified"] = total > 0 and verified == total
     return jsonify(rows)
 
 
