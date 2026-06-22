@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const btnSaveCrop = document.getElementById('btn-save-crop');
     const btnNext = document.getElementById('btn-next');
+    const btnPrev = document.getElementById('btn-prev');
     const btnVerify = document.getElementById('btn-verify');
     const btnInitCrop = document.getElementById('btn-init-crop');
     const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
@@ -761,6 +762,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     btnNext.addEventListener('click', () => { if (currentQuestionIndex < questionsData.length - 1) selectQuestion(currentQuestionIndex + 1); });
+    btnPrev.addEventListener('click', () => { if (currentQuestionIndex > 0) selectQuestion(currentQuestionIndex - 1); });
 
     btnFixAi.addEventListener('click', () => {
         if (!easyMDE) return;
