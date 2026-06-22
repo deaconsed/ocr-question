@@ -6,6 +6,9 @@
       "Bash(python -c ' *)",
       "Bash(venv/Scripts/python.exe -c ' *)",
       "Bash(venv/Scripts/python.exe -m py_compile gpt_extractor.py)"
+    ],
+    "additionalDirectories": [
+      "D:\\OCR"
     ]
   }
 }
