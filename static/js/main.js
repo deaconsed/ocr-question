@@ -283,8 +283,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const btn = document.createElement('button');
             btn.className = 'question-btn';
             let statusHTML = '';
-            const currentUsername = document.getElementById('current-username').value;
-            
+
             if (q.completed) {
                 statusHTML = `<div class="status-indicator" style="background-color: var(--success); color: white; display: flex; align-items: center; justify-content: center; font-size: 8px;" title="Completed">✓</div>`;
             } else if (q.is_missing) {
@@ -293,8 +292,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 btn.style.opacity = "0.8";
             } else if (q.verified) {
                 statusHTML = `<div class="status-indicator verified" title="Verified by ${q.verified_by_username}"></div>`;
-            } else if (userRole !== 'teacher' && q.locked_by_username && q.locked_by_username !== currentUsername) {
-                statusHTML = `<div class="status-indicator" style="background-color: #ef4444; color: white; display: flex; align-items: center; justify-content: center; font-size: 8px;" title="Locked by ${q.locked_by_username}">🔒</div>`;
             } else if (q.question_image) {
                 statusHTML = `<div class="status-indicator has-image"></div>`;
             } else if (q.has_image) {
@@ -312,20 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function selectQuestion(index) {
         if (index < 0 || index >= questionsData.length) return;
-        
-        // Unlock previous question (only if not a teacher)
-        if (userRole !== 'teacher' && currentQuestionIndex !== -1 && currentQuestionIndex !== index) {
-            const prevQ = questionsData[currentQuestionIndex];
-            const currentUsername = document.getElementById('current-username').value;
-            if (!prevQ.locked_by_username || prevQ.locked_by_username === currentUsername) {
-                fetch('/api/unlock_question', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subject: currentSubject, question_number: prevQ.question_number, exam_id: currentExamId })
-                });
-            }
-        }
-        
+
         currentQuestionIndex = index;
         const q = questionsData[index];
 
@@ -366,79 +350,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         recoveryContainer.style.display = 'none';
 
-        const currentUsername = document.getElementById('current-username').value;
-        const isLockedByOther = userRole !== 'teacher' && q.locked_by_username && q.locked_by_username !== currentUsername;
-
-        if (isLockedByOther) {
-            btnEditText.style.display = 'none';
-            btnCompleteQuestion.style.display = 'none';
-            if (!document.getElementById('lock-warning')) {
-                const warning = document.createElement('div');
-                warning.id = 'lock-warning';
-                warning.style.position = 'fixed';
-                warning.style.bottom = '20px';
-                warning.style.right = '20px';
-                warning.style.padding = '12px 20px';
-                warning.style.backgroundColor = 'rgba(239, 68, 68, 0.9)';
-                warning.style.color = 'white';
-                warning.style.borderRadius = '8px';
-                warning.style.zIndex = '9999';
-                warning.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-                warning.style.display = 'flex';
-                warning.style.alignItems = 'center';
-                warning.style.gap = '10px';
-                warning.style.fontSize = '0.9rem';
-                warning.style.animation = 'fadeIn 0.3s ease-out';
-                warning.innerHTML = `<span>⚠️</span> <span>This question is locked by <strong>${q.locked_by_username}</strong></span>`;
-                document.body.appendChild(warning);
-                
-                // Add simple fade in animation if not present
-                if (!document.getElementById('toast-styles')) {
-                    const style = document.createElement('style');
-                    style.id = 'toast-styles';
-                    style.textContent = `
-                        @keyframes fadeIn {
-                            from { opacity: 0; transform: translateY(10px); }
-                            to { opacity: 1; transform: translateY(0); }
-                        }
-                    `;
-                    document.head.appendChild(style);
-                }
-            }
+        // No locking: every question is always accessible. Buttons depend on role only.
+        // Verifier (and admin) can edit text.
+        if (userRole === 'verifier' || userRole === 'admin') {
+            btnEditText.style.display = 'block';
         } else {
-            const w = document.getElementById('lock-warning');
-            if (w) w.remove();
-            
-            // Verifier can edit text, Teacher cannot
-            if (userRole === 'verifier' || userRole === 'admin') {
-                btnEditText.style.display = 'block';
-            } else {
-                btnEditText.style.display = 'none';
-            }
-            
-            // Teacher can see "Complete" button
-            if (userRole === 'teacher' || userRole === 'admin') {
-                btnCompleteQuestion.style.display = 'block';
-            } else {
-                btnCompleteQuestion.style.display = 'none';
-            }
+            btnEditText.style.display = 'none';
+        }
 
-            // Verifier can see "Verify" button
-            if ((userRole === 'verifier' || userRole === 'admin') && !q.verified) {
-                btnVerify.style.display = 'block';
-            } else {
-                btnVerify.style.display = 'none';
-            }
-            
-            // Lock it only for non-teachers
-            if (userRole !== 'teacher') {
-                fetch('/api/lock_question', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ subject: currentSubject, question_number: q.question_number, exam_id: currentExamId })
-                });
-                q.locked_by_username = currentUsername;
-            }
+        // Teacher (and admin) can see "Complete" button.
+        if (userRole === 'teacher' || userRole === 'admin') {
+            btnCompleteQuestion.style.display = 'block';
+        } else {
+            btnCompleteQuestion.style.display = 'none';
+        }
+
+        // Verifier (and admin) can see "Verify" button for unverified questions.
+        if ((userRole === 'verifier' || userRole === 'admin') && !q.verified) {
+            btnVerify.style.display = 'block';
+        } else {
+            btnVerify.style.display = 'none';
         }
 
         hideEditMode();

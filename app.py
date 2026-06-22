@@ -620,78 +620,10 @@ def fix_with_ai():
     else:
         return jsonify({"error": "AI failed to process the text"}), 500
 
-@app.route("/api/lock_question", methods=["POST"])
-@login_required
-def lock_question():
-    data = request.json
-    subject = data.get("subject")
-    question_number = data.get("question_number")
-    exam_id = data.get("exam_id")
-    user_id = session.get("user_id")
-    
-    if not subject or not question_number:
-        return jsonify({"error": "Missing required data"}), 400
-        
-    conn = get_db_connection()
-    if not conn:
-        return jsonify({"error": "Database connection failed"}), 500
-        
-    cursor = conn.cursor()
-    
-    if exam_id:
-        cursor.execute("""
-            UPDATE questions q
-            JOIN subjects s ON q.subject_id = s.id
-            SET q.locked_by = %s, q.locked_at = CURRENT_TIMESTAMP
-            WHERE s.name = %s AND q.question_number = %s AND q.exam_id = %s
-        """, (user_id, subject, question_number, exam_id))
-    else:
-        cursor.execute("""
-            UPDATE questions q
-            JOIN subjects s ON q.subject_id = s.id
-            SET q.locked_by = %s, q.locked_at = CURRENT_TIMESTAMP
-            WHERE s.name = %s AND q.question_number = %s
-        """, (user_id, subject, question_number))
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({"success": True})
-
-@app.route("/api/unlock_question", methods=["POST"])
-@login_required
-def unlock_question():
-    data = request.json
-    subject = data.get("subject")
-    question_number = data.get("question_number")
-    exam_id = data.get("exam_id")
-    user_id = session.get("user_id")
-    
-    conn = get_db_connection()
-    if not conn:
-        return jsonify({"error": "Database connection failed"}), 500
-        
-    cursor = conn.cursor()
-    
-    if exam_id:
-        cursor.execute("""
-            UPDATE questions q
-            JOIN subjects s ON q.subject_id = s.id
-            SET q.locked_by = NULL, q.locked_at = NULL
-            WHERE s.name = %s AND q.question_number = %s AND q.locked_by = %s AND q.exam_id = %s
-        """, (subject, question_number, user_id, exam_id))
-    else:
-        cursor.execute("""
-            UPDATE questions q
-            JOIN subjects s ON q.subject_id = s.id
-            SET q.locked_by = NULL, q.locked_at = NULL
-            WHERE s.name = %s AND q.question_number = %s AND q.locked_by = %s
-        """, (subject, question_number, user_id))
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return jsonify({"success": True})
+# Question locking was removed: every question is always accessible to any
+# verifier/admin. The /api/lock_question and /api/unlock_question endpoints and
+# the lock checks in the dashboard were deleted so an admin browsing a question
+# no longer blocks verifiers from working on it.
 
 # --- Admin Pipeline Routes ---
 

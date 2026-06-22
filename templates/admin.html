@@ -259,10 +259,21 @@
             border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
         }
         .assign-item input { cursor: pointer; }
-        .assign-modal-card select {
+        .assign-modal-card select,
+        .assign-modal-card input[type="text"] {
             padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
             background: var(--bg-element); color: white; font-size: 0.85rem; width: 100%;
+            box-sizing: border-box;
         }
+        .combo-list {
+            position: absolute; top: 100%; left: 0; right: 0; z-index: 30;
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 8px; margin-top: 4px; max-height: 240px; overflow-y: auto;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+        }
+        .combo-item { padding: 8px 10px; cursor: pointer; font-size: 0.85rem; }
+        .combo-item:hover, .combo-item.active { background: rgba(99,102,241,0.18); }
+        .combo-empty { padding: 8px 10px; color: var(--text-muted); font-size: 0.8rem; }
         .assign-current-chip {
             display: inline-flex; align-items: center; gap: 8px;
             padding: 6px 10px; margin: 0 6px 6px 0;
@@ -519,18 +530,18 @@
 
             <h4>Subject assignments</h4>
             <p style="color:var(--text-muted); font-size:0.78rem; margin:4px 0 10px 0;">
-                Pick a session, then a subject within it, and click Add. Repeat to assign more.
+                Pick a session, then type to search a subject within it and pick it, and click Add. Repeat to assign more.
             </p>
             <div style="display:flex; gap:8px; align-items:end; flex-wrap:wrap;">
                 <div class="form-group" style="flex:1; min-width:170px;">
                     <label>Session</label>
                     <select id="assign-sess-select"></select>
                 </div>
-                <div class="form-group" style="flex:1; min-width:170px;">
+                <div class="form-group" style="flex:1; min-width:170px; position:relative;">
                     <label>Subject</label>
-                    <select id="assign-subj-select" disabled>
-                        <option value="">Select a session first…</option>
-                    </select>
+                    <input type="text" id="assign-subj-input" autocomplete="off"
+                           placeholder="Select a session first…" disabled>
+                    <div id="assign-subj-list" class="combo-list" style="display:none;"></div>
                 </div>
                 <button id="assign-add-btn" class="btn btn-secondary" style="height:38px;">Add</button>
             </div>
@@ -810,7 +821,8 @@
             // ── Assignment Modal Logic ──
             const assignModal = document.getElementById('assign-modal');
             const assignSessSelect = document.getElementById('assign-sess-select');
-            const assignSubjSelect = document.getElementById('assign-subj-select');
+            const assignSubjInput = document.getElementById('assign-subj-input');
+            const assignSubjList = document.getElementById('assign-subj-list');
             const assignAddBtn = document.getElementById('assign-add-btn');
             const assignCurrentList = document.getElementById('assign-current-list');
             const assignExamsEl = document.getElementById('assign-exams');
@@ -819,6 +831,9 @@
             let assignUserId = null;
             let assignExams = [];        // [{id, year, label, ...}]
             let assignWorking = [];      // [{exam_id, subject_id, subject_name, exam_label}]
+            let assignSubjects = [];     // subjects in the currently-picked session [{id, name}]
+            let assignSelectedSubject = null;  // {id, name} chosen from the searchable list
+            let assignSubjActive = -1;   // highlighted index for keyboard nav
 
             function examLabel(exam) {
                 return (exam.year ? exam.year + ' — ' : '') + (exam.label || ('Exam ' + exam.id));
@@ -830,8 +845,7 @@
                 assignTitle.textContent = `Assign Work — ${username}`;
                 assignCurrentList.innerHTML = '<span class="assign-current-empty">Loading…</span>';
                 assignExamsEl.innerHTML = '';
-                assignSubjSelect.innerHTML = '<option value="">Select a session first…</option>';
-                assignSubjSelect.disabled = true;
+                resetSubjectPicker('Select a session first…');
                 assignModal.classList.add('open');
 
                 Promise.all([
@@ -883,47 +897,120 @@
                 });
             }
 
+            // ── Searchable subject picker ──
+            function resetSubjectPicker(placeholder) {
+                assignSubjects = [];
+                assignSelectedSubject = null;
+                assignSubjActive = -1;
+                assignSubjInput.value = '';
+                assignSubjInput.placeholder = placeholder;
+                assignSubjInput.disabled = true;
+                hideSubjList();
+            }
+
+            function hideSubjList() {
+                assignSubjList.style.display = 'none';
+                assignSubjActive = -1;
+            }
+
+            function renderSubjList(filter) {
+                const q = (filter || '').trim().toLowerCase();
+                const matches = q
+                    ? assignSubjects.filter(s => s.name.toLowerCase().includes(q))
+                    : assignSubjects.slice();
+                if (assignSubjects.length === 0) {
+                    assignSubjList.innerHTML = '<div class="combo-empty">No subjects in this session</div>';
+                } else if (matches.length === 0) {
+                    assignSubjList.innerHTML = '<div class="combo-empty">No subjects match your search</div>';
+                } else {
+                    assignSubjList.innerHTML = matches.map((s, i) =>
+                        `<div class="combo-item${i === assignSubjActive ? ' active' : ''}" data-id="${s.id}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`
+                    ).join('');
+                    assignSubjList.querySelectorAll('.combo-item').forEach(el => {
+                        // mousedown (not click) so it fires before the input blur hides the list.
+                        el.addEventListener('mousedown', (ev) => {
+                            ev.preventDefault();
+                            pickSubject({ id: parseInt(el.dataset.id), name: el.dataset.name });
+                        });
+                    });
+                }
+                assignSubjList.style.display = 'block';
+            }
+
+            function pickSubject(s) {
+                assignSelectedSubject = s;
+                assignSubjInput.value = s.name;
+                hideSubjList();
+            }
+
             assignSessSelect.addEventListener('change', () => {
                 const examId = assignSessSelect.value;
-                assignSubjSelect.innerHTML = '<option value="">Loading…</option>';
-                assignSubjSelect.disabled = true;
+                resetSubjectPicker('Loading…');
                 if (!examId) {
-                    assignSubjSelect.innerHTML = '<option value="">Select a session first…</option>';
+                    assignSubjInput.placeholder = 'Select a session first…';
                     return;
                 }
                 fetch(`/api/admin/exam_subjects?exam_id=${examId}`)
                     .then(r => r.json())
                     .then(subjects => {
-                        if (!Array.isArray(subjects) || subjects.length === 0) {
-                            assignSubjSelect.innerHTML = '<option value="">No subjects in this session</option>';
-                            return;
-                        }
-                        assignSubjSelect.innerHTML = '<option value="">— pick a subject —</option>' +
-                            subjects.map(s => `<option value="${s.id}" data-name="${escapeHtml(s.name)}">${escapeHtml(s.name)}</option>`).join('');
-                        assignSubjSelect.disabled = false;
+                        assignSubjects = Array.isArray(subjects) ? subjects : [];
+                        assignSubjInput.disabled = false;
+                        assignSubjInput.placeholder = assignSubjects.length
+                            ? 'Search a subject…' : 'No subjects in this session';
                     })
-                    .catch(err => { assignSubjSelect.innerHTML = `<option value="">Error: ${escapeHtml(err.message)}</option>`; });
+                    .catch(err => { assignSubjInput.placeholder = 'Error: ' + err.message; });
+            });
+
+            assignSubjInput.addEventListener('focus', () => {
+                if (!assignSubjInput.disabled) renderSubjList(assignSubjInput.value);
+            });
+            assignSubjInput.addEventListener('input', () => {
+                assignSelectedSubject = null;   // typing invalidates a prior pick
+                assignSubjActive = -1;
+                renderSubjList(assignSubjInput.value);
+            });
+            assignSubjInput.addEventListener('blur', () => { setTimeout(hideSubjList, 120); });
+            assignSubjInput.addEventListener('keydown', (e) => {
+                const items = assignSubjList.querySelectorAll('.combo-item');
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (items.length === 0) return;
+                    assignSubjActive = e.key === 'ArrowDown'
+                        ? Math.min(assignSubjActive + 1, items.length - 1)
+                        : Math.max(assignSubjActive - 1, 0);
+                    items.forEach((el, i) => el.classList.toggle('active', i === assignSubjActive));
+                    items[assignSubjActive].scrollIntoView({ block: 'nearest' });
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (assignSubjActive >= 0 && items[assignSubjActive]) {
+                        const el = items[assignSubjActive];
+                        pickSubject({ id: parseInt(el.dataset.id), name: el.dataset.name });
+                    }
+                } else if (e.key === 'Escape') {
+                    hideSubjList();
+                }
             });
 
             assignAddBtn.addEventListener('click', () => {
                 const examId = parseInt(assignSessSelect.value);
-                const subjectId = parseInt(assignSubjSelect.value);
                 if (!examId) { alert('Pick a session.'); return; }
-                if (!subjectId) { alert('Pick a subject.'); return; }
+                if (!assignSelectedSubject) { alert('Search and pick a subject from the list.'); return; }
+                const subjectId = assignSelectedSubject.id;
                 if (assignWorking.some(a => a.exam_id === examId && a.subject_id === subjectId)) {
                     alert('That subject is already assigned for this session.');
                     return;
                 }
                 const exam = assignExams.find(e => e.id === examId);
-                const subjOpt = assignSubjSelect.options[assignSubjSelect.selectedIndex];
                 assignWorking.push({
                     exam_id: examId,
                     subject_id: subjectId,
-                    subject_name: subjOpt ? subjOpt.dataset.name : ('Subject ' + subjectId),
+                    subject_name: assignSelectedSubject.name,
                     exam_label: exam ? examLabel(exam) : ('Exam ' + examId)
                 });
                 renderCurrentAssignments();
-                assignSubjSelect.value = '';
+                assignSelectedSubject = null;
+                assignSubjInput.value = '';
+                assignSubjInput.focus();
             });
 
             document.getElementById('assign-close').addEventListener('click', () => assignModal.classList.remove('open'));
