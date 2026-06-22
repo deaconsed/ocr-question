@@ -84,21 +84,51 @@ def extract_question_with_gpt(client: OpenAI, image_path: str, filename: str) ->
 
 def fix_text_with_gpt(client: OpenAI, question_text: str, options: dict) -> dict:
     prompt = f"""
-    You are an expert mathematical formatter. I have an extracted examination question and its multiple choice options.
-    The mathematical equations might be wrapped in standard parentheses like `( \\frac{{1}}{{2}} )` or `( x^2 )` instead of proper LaTeX/KaTeX delimiters.
-    
-    YOUR TASK:
-    1. Scan the `question_text` and the `options`.
-    2. Identify ANY mathematical formulas, fractions, matrices, or symbols.
-    3. Ensure they are strictly wrapped in KaTeX delimiters:
-       - For inline math, strictly use `$` (e.g. `$x=5$`). DO NOT use `\\(` and `\\)`.
-       - For block math (like `\\begin{{matrix}}...`), strictly use `$$`. DO NOT use `\\[` and `\\]`.
-    4. Remove any plain parentheses `( )` that were incorrectly wrapping the math, replacing them with the proper delimiters.
-    5. LEAVE ALL OTHER TEXT AND MARKDOWN EXACTLY AS IT IS. Do NOT alter the wording of the question.
-    
+    You are an expert at formatting extracted examination questions for Markdown + KaTeX rendering.
+    I have an extracted examination question and its multiple choice options. They may contain
+    mathematical formulas that are not (or wrongly) wrapped in delimiters, and/or tabular data
+    (e.g. a frequency distribution) that is broken or not valid Markdown.
+
+    A) MATH
+    1. Identify ANY mathematical formulas, fractions, matrices, or symbols (they might be wrapped
+       in plain parentheses like `( \\frac{{1}}{{2}} )` or `( x^2 )` instead of proper delimiters).
+    2. Wrap them strictly in KaTeX delimiters:
+       - Inline math: use single `$ ... $` (e.g. `$x=5$`). DO NOT use `\\(` and `\\)`.
+       - Block math (like `\\begin{{matrix}}...`): use `$$ ... $$`. DO NOT use `\\[` and `\\]`.
+    3. Remove any plain parentheses `( )` that were incorrectly wrapping math, replacing them with
+       the proper delimiters.
+
+    B) TABLES
+    1. If the text contains tabular data — rows of cells separated by `|`, or values that clearly
+       form a table such as a frequency distribution — reformat it into a VALID GitHub-Flavored
+       Markdown (GFM) table.
+    2. A valid GFM table MUST:
+       - Put each row on its own single line, with NO blank lines between the rows.
+       - Have the header row followed IMMEDIATELY by a separator row of dashes, one `---` per
+         column, e.g. `| --- | --- | --- |`.
+       - Have the same number of columns in every row.
+    3. If the separator row is missing, ADD it right after the first (header) row. If there are
+       stray blank lines between table rows, REMOVE them so the rows are contiguous.
+    4. Keep every cell value EXACTLY as given (including any math, which stays wrapped in `$...$`).
+       Do not add, drop, reorder, or change any cell.
+
+    Example of fixing a broken table:
+    INPUT:
+    | $X$ | 1 | 2 | 3 | 4 | 5 |
+
+    | Frequency | 5 | 4 | 3 | 2 | 1 |
+    OUTPUT:
+    | $X$ | 1 | 2 | 3 | 4 | 5 |
+    | --- | --- | --- | --- | --- | --- |
+    | Frequency | 5 | 4 | 3 | 2 | 1 |
+
+    C) GENERAL
+    - Do NOT alter the wording of the question or the meaning of any cell/option.
+    - Leave all other text and Markdown exactly as it is.
+
     Current Question Text:
     {question_text}
-    
+
     Current Options:
     {json.dumps(options, indent=2)}
     """
