@@ -119,15 +119,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const group = document.createElement('div');
             group.className = 'assign-group';
             group.innerHTML = '<div class="assign-group-title">Sessions</div>';
+
+            // Sessions as a dropdown (a verifier may have many). Selecting one opens
+            // the session: it loads that session's subjects and its first subject.
+            const sel = document.createElement('select');
+            sel.className = 'assign-session-select';
+            const first = document.createElement('option');
+            first.value = '';
+            first.textContent = '— select a session —';
+            sel.appendChild(first);
             exams.forEach(ex => {
-                const chip = document.createElement('button');
-                chip.className = 'assign-chip session' + (ex.all_verified ? ' verified' : '');
+                const opt = document.createElement('option');
+                opt.value = ex.id;
                 const sessionLabel = `${ex.year ? ex.year + ' · ' : ''}${ex.label || 'Session ' + ex.session_index}`;
-                const tick = ex.all_verified ? '<span class="assign-tick" title="Fully verified">✅</span>' : '';
-                chip.innerHTML = `<span>🗂️ ${sessionLabel}</span>${tick}`;
-                chip.onclick = () => gotoExam(ex.id);
-                group.appendChild(chip);
+                opt.textContent = (ex.all_verified ? '✅ ' : '') + sessionLabel;
+                sel.appendChild(opt);
             });
+            sel.addEventListener('change', () => {
+                if (sel.value) gotoExam(parseInt(sel.value, 10));
+            });
+            group.appendChild(sel);
             assignmentsContainer.appendChild(group);
         }
 

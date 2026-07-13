@@ -40,24 +40,33 @@
         .assign-tick { margin-left: auto; color: var(--success); font-size: 0.95rem; line-height: 1; }
         .assign-empty { font-size: 0.78rem; color: var(--text-muted); padding: 4px 0; }
 
-        /* Question grid navigator */
-        #question-grid-section {
-            padding: 12px 16px; border-top: 1px solid var(--border);
-            flex-shrink: 0; max-height: 42vh; overflow-y: auto;
+        /* Session assignments dropdown */
+        .assign-session-select {
+            width: 100%; padding: 9px 10px; border-radius: 8px;
+            background: var(--bg-element); border: 1px solid var(--border);
+            color: var(--text); font-size: 0.85rem; cursor: pointer; outline: none;
         }
-        .qgrid-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .assign-session-select:focus { border-color: var(--primary); }
+
+        /* Question grid navigator (full-width strip below the question preview) */
+        .question-grid-bar {
+            flex-shrink: 0; padding: 12px 24px 16px; border-top: 1px solid var(--border);
+            background: var(--bg-panel); max-height: 30vh; overflow-y: auto;
+        }
+        .qgrid-head { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
         .qgrid-head label {
-            font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+            font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.04em; color: var(--text-muted); margin: 0;
         }
-        .qgrid-progress { font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+        .qgrid-progress { font-size: 0.75rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
         .question-grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 6px;
+            display: grid; grid-template-columns: repeat(auto-fill, 40px);
+            gap: 8px; justify-content: start;
         }
         .qgrid-box {
-            aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center;
+            width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
             border: 1px solid var(--border); background: var(--bg-element); color: var(--text);
-            border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-weight: 600;
+            border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600;
             transition: transform 0.12s, box-shadow 0.12s; padding: 0;
         }
         .qgrid-box:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
@@ -67,7 +76,7 @@
         .qgrid-box.missing { border-style: dashed; border-color: #ef4444; color: #ef4444; background: transparent; }
         .qgrid-box.active { outline: 2px solid var(--primary); outline-offset: 1px; }
         .qgrid-legend {
-            display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px;
+            display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto;
             font-size: 0.7rem; color: var(--text-muted);
         }
         .qgrid-legend span { display: inline-flex; align-items: center; gap: 5px; }
@@ -124,19 +133,6 @@
 
             <div class="questions-list" id="questions-list">
                 <!-- Question buttons will be populated here -->
-            </div>
-
-            <div id="question-grid-section" style="display: none;">
-                <div class="qgrid-head">
-                    <label>Question Grid</label>
-                    <span id="qgrid-progress" class="qgrid-progress"></span>
-                </div>
-                <div id="question-grid" class="question-grid"></div>
-                <div class="qgrid-legend">
-                    <span><i class="lg lg-verified"></i>Verified</span>
-                    <span><i class="lg lg-open"></i>Unverified</span>
-                    <span><i class="lg lg-missing"></i>Missing</span>
-                </div>
             </div>
         </aside>
 
@@ -256,6 +252,20 @@
                         <p class="placeholder-text" id="image-placeholder">Source image will appear here...</p>
                     </div>
                 </div>
+            </div>
+
+            <!-- Question grid navigator (below the question preview) -->
+            <div id="question-grid-section" class="question-grid-bar" style="display: none;">
+                <div class="qgrid-head">
+                    <label>Question Grid</label>
+                    <span id="qgrid-progress" class="qgrid-progress"></span>
+                    <div class="qgrid-legend">
+                        <span><i class="lg lg-verified"></i>Verified</span>
+                        <span><i class="lg lg-open"></i>Unverified</span>
+                        <span><i class="lg lg-missing"></i>Missing</span>
+                    </div>
+                </div>
+                <div id="question-grid" class="question-grid"></div>
             </div>
         </main>
     </div>
