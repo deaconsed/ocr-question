@@ -164,25 +164,47 @@ def my_assignments():
         return jsonify({"assignments": [], "exams": []})
     cursor = conn.cursor(dictionary=True)
     try:
+        # Subject assignments, with verification progress for the subject within
+        # its specific session (used to show a "fully verified" tick).
         cursor.execute("""
             SELECT va.exam_id, va.subject_id, s.name AS subject_name,
-                   e.year AS exam_year, e.label AS exam_label, e.session_index
+                   e.year AS exam_year, e.label AS exam_label, e.session_index,
+                   COUNT(q.id) AS total_questions,
+                   COALESCE(SUM(q.verified = 1), 0) AS verified_count
             FROM verifier_assignments va
             JOIN subjects s ON va.subject_id = s.id
             JOIN exams e ON va.exam_id = e.id
+            LEFT JOIN questions q
+                   ON q.exam_id = va.exam_id AND q.subject_id = va.subject_id
             WHERE va.user_id = %s
+            GROUP BY va.exam_id, va.subject_id, s.name, e.year, e.label, e.session_index
             ORDER BY e.year DESC, e.session_index ASC, s.name ASC
         """, (user_id,))
         assignments = cursor.fetchall()
 
+        # Whole-session assignments, with verification progress across all subjects.
         cursor.execute("""
-            SELECT e.id, e.year, e.label, e.session_index
+            SELECT e.id, e.year, e.label, e.session_index,
+                   COUNT(q.id) AS total_questions,
+                   COALESCE(SUM(q.verified = 1), 0) AS verified_count
             FROM verifier_exams ve
             JOIN exams e ON ve.exam_id = e.id
+            LEFT JOIN questions q ON q.exam_id = e.id
             WHERE ve.user_id = %s
+            GROUP BY e.id, e.year, e.label, e.session_index
             ORDER BY e.year DESC, e.session_index ASC
         """, (user_id,))
         exams = cursor.fetchall()
+
+        # Normalise counts and flag fully-verified items (all existing questions
+        # verified). SUM() comes back as Decimal, so coerce to int.
+        for row in assignments + exams:
+            total = int(row.get("total_questions") or 0)
+            verified = int(row.get("verified_count") or 0)
+            row["total_questions"] = total
+            row["verified_count"] = verified
+            row["all_verified"] = total > 0 and verified == total
+
         return jsonify({"assignments": assignments, "exams": exams})
     finally:
         cursor.close()
@@ -800,6 +822,40 @@ def delete_user(user_id):
     cursor.close()
     conn.close()
     return jsonify({"success": True})
+
+@app.route("/api/users/<int:user_id>/reset_password", methods=["POST"])
+@admin_required
+def reset_user_password(user_id):
+    """Admin sets a new password for any user (no old-password check)."""
+    data = request.json or {}
+    new_password = data.get("password")
+
+    if not new_password or len(new_password) < 4:
+        return jsonify({"success": False,
+                        "error": "Password is required (min 4 characters)"}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"success": False, "error": "Database connection failed"}), 500
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id, username FROM users WHERE id = %s", (user_id,))
+        user = cursor.fetchone()
+        if not user:
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        pw_hash = generate_password_hash(new_password)
+        cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s",
+                       (pw_hash, user_id))
+        conn.commit()
+        return jsonify({"success": True, "username": user["username"]})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"success": False, "error": str(e)}), 400
+    finally:
+        cursor.close()
+        conn.close()
 
 # --- Verifier Assignment Routes ---
 

@@ -106,8 +106,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const label = a.subject_name.replace(/_/g, ' ').toUpperCase();
                 const sessionLabel = `${a.exam_year ? a.exam_year + ' · ' : ''}${a.exam_label || 'Session ' + a.session_index}`;
                 const chip = document.createElement('button');
-                chip.className = 'assign-chip';
-                chip.innerHTML = `<span>📘 ${label}</span><span class="assign-chip-sub">${sessionLabel}</span>`;
+                chip.className = 'assign-chip' + (a.all_verified ? ' verified' : '');
+                const tick = a.all_verified ? '<span class="assign-tick" title="Fully verified">✅</span>' : '';
+                chip.innerHTML = `<span>📘 ${label}</span><span class="assign-chip-sub">${sessionLabel}</span>${tick}`;
                 chip.onclick = () => gotoSubject(a.exam_id, a.subject_name);
                 group.appendChild(chip);
             });
@@ -120,9 +121,10 @@ document.addEventListener('DOMContentLoaded', () => {
             group.innerHTML = '<div class="assign-group-title">Sessions</div>';
             exams.forEach(ex => {
                 const chip = document.createElement('button');
-                chip.className = 'assign-chip session';
+                chip.className = 'assign-chip session' + (ex.all_verified ? ' verified' : '');
                 const sessionLabel = `${ex.year ? ex.year + ' · ' : ''}${ex.label || 'Session ' + ex.session_index}`;
-                chip.innerHTML = `<span>🗂️ ${sessionLabel}</span>`;
+                const tick = ex.all_verified ? '<span class="assign-tick" title="Fully verified">✅</span>' : '';
+                chip.innerHTML = `<span>🗂️ ${sessionLabel}</span>${tick}`;
                 chip.onclick = () => gotoExam(ex.id);
                 group.appendChild(chip);
             });
@@ -168,7 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     }
 
-    // Jump to an exam session: select it and load its subject list.
+    // Jump to an exam session: select it, load its subject list, and open the
+    // first subject so the user can start working immediately.
     function gotoExam(examId) {
         const exam = allExams.find(e => e.id == examId);
         if (exam && exam.year) {
@@ -180,7 +183,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         examSelect.disabled = false;
         examSelect.value = examId;
-        examSelect.dispatchEvent(new Event('change'));
+        currentExamId = String(examId);
+        currentSubject = null;
+        questionsData = [];
+        currentQuestionIndex = -1;
+        subjectSelect.disabled = false;
+        subjectSelect.innerHTML = '<option value="" disabled selected>Loading subjects...</option>';
+        clearWorkspace();
+
+        fetch(`/api/subjects?exam_id=${examId}`)
+            .then(res => res.json())
+            .then(subjects => {
+                subjectSelect.innerHTML = '<option value="" disabled>Select a subject...</option>';
+                subjects.forEach(sub => {
+                    const opt = document.createElement('option');
+                    opt.value = sub;
+                    opt.textContent = sub.replace(/_/g, ' ').toUpperCase();
+                    subjectSelect.appendChild(opt);
+                });
+                // Auto-open the first subject so there's something to work on.
+                if (subjects.length > 0) {
+                    subjectSelect.value = subjects[0];
+                    currentSubject = subjects[0];
+                    loadQuestions(subjects[0]);
+                } else {
+                    subjectSelect.innerHTML = '<option value="" disabled selected>No subjects with questions yet</option>';
+                    questionsList.innerHTML = '<p class="placeholder-text">No questions in this session yet.</p>';
+                }
+            })
+            .catch(() => {
+                questionsList.innerHTML = '<p class="placeholder-text">Failed to load subjects.</p>';
+            });
     }
 
     function populateYearSelect() {

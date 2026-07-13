@@ -260,7 +260,8 @@
         }
         .assign-item input { cursor: pointer; }
         .assign-modal-card select,
-        .assign-modal-card input[type="text"] {
+        .assign-modal-card input[type="text"],
+        .assign-modal-card input[type="password"] {
             padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border);
             background: var(--bg-element); color: white; font-size: 0.85rem; width: 100%;
             box-sizing: border-box;
@@ -555,6 +556,31 @@
         </div>
     </div>
 
+    <!-- Reset password modal (used by User Management tab) -->
+    <div id="resetpw-modal" class="assign-modal">
+        <div class="assign-modal-card" style="width:min(420px, 92vw);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h3 id="resetpw-title" style="margin:0;">Reset Password</h3>
+                <button id="resetpw-close" class="btn btn-secondary">Close</button>
+            </div>
+            <p style="color:var(--text-muted); font-size:0.8rem; margin:0 0 16px 0;">
+                Set a new password for this user. They will use it on their next login.
+            </p>
+            <div class="form-group" style="margin-bottom:12px;">
+                <label>New password</label>
+                <input type="password" id="resetpw-new" autocomplete="new-password" placeholder="Enter new password…">
+            </div>
+            <div class="form-group" style="margin-bottom:6px;">
+                <label>Confirm password</label>
+                <input type="password" id="resetpw-confirm" autocomplete="new-password" placeholder="Re-enter new password…">
+            </div>
+            <div id="resetpw-error" style="color:#ef4444; font-size:0.8rem; min-height:1em; margin-bottom:10px;"></div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button id="resetpw-save" class="btn btn-primary">Set Password</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             // Tab Switching
@@ -766,6 +792,7 @@
                                 <td>${new Date(user.created_at).toLocaleString()}</td>
                                 <td>
                                     ${user.role !== 'admin' ? `<button class="btn btn-secondary assign-user-btn" data-id="${user.id}" data-username="${escapeHtml(user.username)}" style="margin-right:6px;">Assign</button>` : ''}
+                                    <button class="btn btn-secondary reset-pw-btn" data-id="${user.id}" data-username="${escapeHtml(user.username)}" style="margin-right:6px;">Reset PW</button>
                                     <button class="btn btn-secondary delete-user-btn" data-id="${user.id}" style="background:#ef4444; color:white; border:none; padding:4px 10px;">Delete</button>
                                 </td>
                             `;
@@ -777,6 +804,9 @@
                         });
                         document.querySelectorAll('.assign-user-btn').forEach(btn => {
                             btn.addEventListener('click', () => openAssignModal(btn.dataset.id, btn.dataset.username));
+                        });
+                        document.querySelectorAll('.reset-pw-btn').forEach(btn => {
+                            btn.addEventListener('click', () => openResetPwModal(btn.dataset.id, btn.dataset.username));
                         });
                     });
             }
@@ -817,6 +847,78 @@
                         else alert(data.error);
                     });
             }
+
+            // ── Reset Password Modal Logic ──
+            const resetPwModal = document.getElementById('resetpw-modal');
+            const resetPwTitle = document.getElementById('resetpw-title');
+            const resetPwNew = document.getElementById('resetpw-new');
+            const resetPwConfirm = document.getElementById('resetpw-confirm');
+            const resetPwError = document.getElementById('resetpw-error');
+            const resetPwSave = document.getElementById('resetpw-save');
+            const resetPwClose = document.getElementById('resetpw-close');
+            let resetPwUserId = null;
+
+            function openResetPwModal(userId, username) {
+                resetPwUserId = userId;
+                resetPwTitle.textContent = `Reset Password — ${username}`;
+                resetPwNew.value = '';
+                resetPwConfirm.value = '';
+                resetPwError.textContent = '';
+                resetPwSave.disabled = false;
+                resetPwModal.classList.add('open');
+                resetPwNew.focus();
+            }
+
+            function closeResetPwModal() {
+                resetPwModal.classList.remove('open');
+                resetPwUserId = null;
+            }
+
+            resetPwClose.addEventListener('click', closeResetPwModal);
+            resetPwModal.addEventListener('click', (e) => {
+                if (e.target === resetPwModal) closeResetPwModal();
+            });
+
+            function submitResetPw() {
+                const pw = resetPwNew.value;
+                const confirmPw = resetPwConfirm.value;
+                resetPwError.textContent = '';
+
+                if (!pw || pw.length < 4) {
+                    resetPwError.textContent = 'Password must be at least 4 characters.';
+                    return;
+                }
+                if (pw !== confirmPw) {
+                    resetPwError.textContent = 'Passwords do not match.';
+                    return;
+                }
+
+                resetPwSave.disabled = true;
+                fetch(`/api/users/${resetPwUserId}/reset_password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        closeResetPwModal();
+                        alert(`Password updated for ${data.username || 'user'}.`);
+                    } else {
+                        resetPwError.textContent = data.error || 'Failed to reset password.';
+                        resetPwSave.disabled = false;
+                    }
+                })
+                .catch(err => {
+                    resetPwError.textContent = 'Request failed: ' + err.message;
+                    resetPwSave.disabled = false;
+                });
+            }
+
+            resetPwSave.addEventListener('click', submitResetPw);
+            resetPwConfirm.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') submitResetPw();
+            });
 
             // ── Assignment Modal Logic ──
             const assignModal = document.getElementById('assign-modal');
