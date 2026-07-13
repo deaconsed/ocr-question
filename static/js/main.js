@@ -691,6 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 q.question_text = newText; q.options = newOptions; q.verified = true;
                 q.verified_by_username = document.getElementById('current-username').value;
                 selectQuestion(currentQuestionIndex); renderQuestionsList();
+                loadMyAssignments();  // refresh sidebar so the "fully verified" tick updates
             } else alert("Failed to save changes.");
         })
         .finally(() => { btnSaveText.textContent = "Save Changes"; btnSaveText.disabled = false; });
@@ -718,6 +719,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 q.verified = true;
                 q.verified_by_username = document.getElementById('current-username').value;
                 renderQuestionsList();
+                loadMyAssignments();  // refresh sidebar so the "fully verified" tick updates
                 if (currentQuestionIndex < questionsData.length - 1) selectQuestion(currentQuestionIndex + 1);
             } else alert("Failed to verify question: " + data.error);
         })
