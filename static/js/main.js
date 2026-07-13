@@ -339,6 +339,55 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.onclick = () => selectQuestion(index);
             questionsList.appendChild(btn);
         });
+
+        renderQuestionGrid();
+    }
+
+    // Compact grid navigator: one box per question in the current subject.
+    // Green when verified/completed; clicking opens that question.
+    function renderQuestionGrid() {
+        const section = document.getElementById('question-grid-section');
+        const grid = document.getElementById('question-grid');
+        const progress = document.getElementById('qgrid-progress');
+        if (!section || !grid) return;
+
+        if (!questionsData || questionsData.length === 0) {
+            section.style.display = 'none';
+            grid.innerHTML = '';
+            return;
+        }
+
+        grid.innerHTML = '';
+        let verifiedCount = 0;
+        questionsData.forEach((q, index) => {
+            const box = document.createElement('button');
+            box.type = 'button';
+            let cls = 'qgrid-box';
+            let title = `Question ${q.question_number}`;
+            if (q.completed) {
+                cls += ' completed';
+                title += ' — completed';
+            } else if (q.verified) {
+                cls += ' verified';
+                title += ' — verified' + (q.verified_by_username ? ' by ' + q.verified_by_username : '');
+            } else if (q.is_missing) {
+                cls += ' missing';
+                title += ' — missing';
+            } else if (q.question_image || q.has_image) {
+                cls += ' has-image';
+                title += ' — has image';
+            }
+            if (index === currentQuestionIndex) cls += ' active';
+            box.className = cls;
+            box.textContent = q.question_number;
+            box.title = title;
+            box.onclick = () => selectQuestion(index);
+            grid.appendChild(box);
+            if (q.verified || q.completed) verifiedCount++;
+        });
+
+        if (progress) progress.textContent = `${verifiedCount}/${questionsData.length} verified`;
+        section.style.display = 'block';
     }
 
     function selectQuestion(index) {
@@ -349,6 +398,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.querySelectorAll('.question-btn').forEach((btn, i) => {
             btn.classList.toggle('active', i === index);
+        });
+        document.querySelectorAll('.qgrid-box').forEach((box, i) => {
+            box.classList.toggle('active', i === index);
         });
 
         currentQuestionTitle.textContent = `${currentSubject.replace(/_/g, ' ').toUpperCase()} - Question ${q.question_number}`;
@@ -603,6 +655,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnEditText.style.display = 'none';
         btnCompleteQuestion.style.display = 'none';
         teacherSection.style.display = 'none';
+        const gridSection = document.getElementById('question-grid-section');
+        if (gridSection) gridSection.style.display = 'none';
         hideEditMode();
     }
 
