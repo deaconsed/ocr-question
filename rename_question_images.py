@@ -2,35 +2,42 @@
 """
 rename_question_images.py
 
-Fix re-copied question frames whose filenames are bare numbers
-(1.png, 2.png, ...) so they match the naming the app expects:
-question_<n>.<ext>  (e.g. question_1.png).
+Normalise the on-disk layout of extracted_frames/ so it matches exactly
+what the Flask app requests, for one or more exam sessions you choose.
 
-The app serves/looks up images by 'question_<number>.<ext>'
-(see folder_importer.py -> dest_name = f"question_{q_num}{ext}"),
-so folders that only contain "1.png", "2.png" render as broken images.
+Two fixes, in this order, per selected exam_<id> folder:
+
+  1. SUBJECT FOLDER NAMES -> canonical form
+       The app builds the path with:  subject.lower().replace(" ", "_")
+       (see app.py serve_image / serve_image_exam), so a folder must be
+       lower-case with underscores instead of spaces, e.g.:
+           BIOLOGY          -> biology
+           USE OF ENGLISH   -> use_of_english
+       If a folder is not in that form, the app 404s on the exam-scoped
+       URL and silently falls back to a shared, session-agnostic folder,
+       which makes different sessions show the SAME images.
+
+  2. IMAGE FILE NAMES -> question_<n>.<ext>
+       Bare-number frames (1.png, 2.png, ...) are renamed to
+       question_1.png, question_2.png, ... which is what the DB's
+       image_name column and the app expect.
 
 Run it on the server, from anywhere:
-    python rename_question_images.py
-
-It will:
-  1. list the exam_<id> folders under extracted_frames/
-  2. let you choose one, several, or ALL of them
-  3. walk every subject sub-folder
-  4. rename bare-number images -> question_<n>.<ext>
+    python3 rename_question_images.py
 
 Safe by design:
-  - files already named 'question_*' are left untouched
-  - files whose stem is not a plain integer are skipped (reported)
-  - it will NOT overwrite an existing question_<n> file (collision -> skipped)
-  - a dry-run preview is shown first; nothing changes until you type 'yes'
+  - shows a full dry-run preview; nothing changes until you type 'yes'
+  - folders/files already in the correct form are left untouched
+  - if a canonical target folder already exists (e.g. both BIOLOGY and
+    biology are present), it MERGES the contents in and reports any
+    file that would collide instead of overwriting it
+  - never overwrites an existing question_<n> file (collision -> skipped)
 """
 
 import os
 import sys
 
-# Root folder that holds exam_<id>/<subject>/... images.
-# Defaults to <this script's dir>/extracted_frames, matching app.py's INPUT_DIR.
+# Root that holds exam_<id>/<subject>/... images (matches app.py INPUT_DIR).
 INPUT_DIR = os.environ.get(
     "OCR_INPUT_DIR",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "extracted_frames"),
@@ -39,16 +46,23 @@ INPUT_DIR = os.environ.get(
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 
+def canonical(subject_folder_name):
+    """The exact transform the app uses to turn a subject into a folder name."""
+    return subject_folder_name.lower().replace(" ", "_")
+
+
+# ---------------------------------------------------------------------------
+# Selection
+# ---------------------------------------------------------------------------
 def list_exam_folders(root):
     if not os.path.isdir(root):
         print(f"[ERROR] Folder not found: {root}")
         print("        Set OCR_INPUT_DIR or run this from the project root.")
         sys.exit(1)
-    exams = sorted(
+    return sorted(
         d for d in os.listdir(root)
         if d.startswith("exam_") and os.path.isdir(os.path.join(root, d))
     )
-    return exams
 
 
 def choose_exams(exams):
@@ -69,21 +83,91 @@ def choose_exams(exams):
             print(f"[WARN] Ignoring invalid choice: {part!r}")
             continue
         chosen.append(exams[int(part) - 1])
-    # de-dup, keep order
     seen = set()
     return [x for x in chosen if not (x in seen or seen.add(x))]
 
 
-def plan_renames(root, exam_folders):
-    """Return (renames, skipped) where renames is a list of
-    (src_path, dst_path, label) tuples to perform."""
-    renames = []
-    skipped = []
+# ---------------------------------------------------------------------------
+# Step 1: subject folder normalisation
+# ---------------------------------------------------------------------------
+def plan_folder_renames(root, exam_folders):
+    """Return (renames, merges, skipped).
+    renames = [(src_dir, dst_dir, label)]        simple rename
+    merges  = [(src_dir, dst_dir, label)]        target exists -> merge contents
+    skipped = [(path, reason)]
+    """
+    renames, merges, skipped = [], [], []
 
     for exam in exam_folders:
         exam_path = os.path.join(root, exam)
-        for subject in sorted(os.listdir(exam_path)):
-            subject_path = os.path.join(exam_path, subject)
+        for sub in sorted(os.listdir(exam_path)):
+            src_dir = os.path.join(exam_path, sub)
+            if not os.path.isdir(src_dir):
+                continue
+
+            target = canonical(sub)
+            if sub == target:
+                continue  # already correct
+
+            dst_dir = os.path.join(exam_path, target)
+            label = f"{exam}/{sub}  ->  {exam}/{target}"
+
+            if os.path.exists(dst_dir):
+                # A folder with the canonical name already exists -> merge.
+                merges.append((src_dir, dst_dir, label))
+            else:
+                renames.append((src_dir, dst_dir, label))
+
+    return renames, merges, skipped
+
+
+def apply_folder_renames(renames, merges):
+    done = errors = merged_files = collisions = 0
+
+    for src, dst, label in renames:
+        try:
+            os.rename(src, dst)
+            done += 1
+        except OSError as e:
+            errors += 1
+            print(f"  [ERROR] {label}  ({e})")
+
+    for src, dst, label in merges:
+        print(f"  [merge] {label}")
+        for fname in os.listdir(src):
+            s = os.path.join(src, fname)
+            d = os.path.join(dst, fname)
+            if os.path.exists(d):
+                collisions += 1
+                print(f"      [collision] {fname} already in target -> left in {os.path.basename(src)}/")
+                continue
+            try:
+                os.rename(s, d)
+                merged_files += 1
+            except OSError as e:
+                errors += 1
+                print(f"      [ERROR] moving {fname} ({e})")
+        # Remove the source folder only if it is now empty.
+        try:
+            if not os.listdir(src):
+                os.rmdir(src)
+        except OSError:
+            pass
+
+    return done, merged_files, collisions, errors
+
+
+# ---------------------------------------------------------------------------
+# Step 2: image file normalisation (bare number -> question_<n>)
+# ---------------------------------------------------------------------------
+def plan_image_renames(root, exam_folders):
+    """Runs AFTER folder renames, so it reads the canonical folder names."""
+    renames, skipped = [], []
+
+    for exam in exam_folders:
+        exam_path = os.path.join(root, exam)
+        for sub in sorted(os.listdir(exam_path)):
+            subject_path = os.path.join(exam_path, sub)
             if not os.path.isdir(subject_path):
                 continue
 
@@ -91,13 +175,10 @@ def plan_renames(root, exam_folders):
                 stem, ext = os.path.splitext(fname)
                 if ext.lower() not in IMAGE_EXTENSIONS:
                     continue
-
-                # Already correctly named -> leave it alone.
                 if stem.startswith("question_"):
                     continue
-                # Solutions and other named files -> leave alone.
                 if not stem.isdigit():
-                    skipped.append((f"{exam}/{subject}/{fname}", "not a plain number"))
+                    skipped.append((f"{exam}/{sub}/{fname}", "not a plain number"))
                     continue
 
                 q_num = int(stem)
@@ -106,21 +187,33 @@ def plan_renames(root, exam_folders):
                 dst_path = os.path.join(subject_path, dst_name)
 
                 if os.path.exists(dst_path):
-                    skipped.append(
-                        (f"{exam}/{subject}/{fname}", f"{dst_name} already exists")
-                    )
+                    skipped.append((f"{exam}/{sub}/{fname}", f"{dst_name} already exists"))
                     continue
 
-                label = f"{exam}/{subject}/{fname}  ->  {dst_name}"
-                renames.append((src_path, dst_path, label))
+                renames.append((src_path, dst_path, f"{exam}/{sub}/{fname}  ->  {dst_name}"))
 
     return renames, skipped
 
 
+def apply_image_renames(renames):
+    done = errors = 0
+    for src, dst, label in renames:
+        try:
+            os.rename(src, dst)
+            done += 1
+        except OSError as e:
+            errors += 1
+            print(f"  [ERROR] {label}  ({e})")
+    return done, errors
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 def main():
-    print("=" * 60)
-    print(" Rename question images -> question_<n>.<ext>")
-    print("=" * 60)
+    print("=" * 64)
+    print(" Normalise extracted_frames: subject folders + image names")
+    print("=" * 64)
     print(f"Image root: {INPUT_DIR}")
 
     exams = list_exam_folders(INPUT_DIR)
@@ -133,40 +226,59 @@ def main():
         print("No valid selection. Exiting.")
         return
 
-    renames, skipped = plan_renames(INPUT_DIR, exam_folders)
-
     print(f"\nSelected: {', '.join(exam_folders)}")
-    print(f"Planned renames: {len(renames)}")
-    print(f"Skipped: {len(skipped)}")
 
-    if skipped:
-        print("\n--- Skipped (unchanged) ---")
-        for path, reason in skipped:
-            print(f"  [skip] {path}  ({reason})")
+    # ---- Plan step 1 (folders) ----
+    folder_renames, folder_merges, _ = plan_folder_renames(INPUT_DIR, exam_folders)
 
-    if not renames:
-        print("\nNothing to rename.")
+    print("\n--- STEP 1: subject folder names (dry run) ---")
+    if not folder_renames and not folder_merges:
+        print("  All subject folders already in canonical form.")
+    for _, _, label in folder_renames:
+        print(f"  rename: {label}")
+    for _, _, label in folder_merges:
+        print(f"  MERGE : {label}   (target already exists)")
+
+    # Plan step 2 as a *preview only* using current names; after folder
+    # renames the paths change, so we re-plan step 2 for real afterwards.
+    prev_img_renames, prev_img_skipped = plan_image_renames(INPUT_DIR, exam_folders)
+    print("\n--- STEP 2: image file names (preview) ---")
+    if not prev_img_renames:
+        print("  No bare-number images found to rename (or already question_<n>).")
+    for _, _, label in prev_img_renames[:200]:
+        print(f"  rename: {label}")
+    if len(prev_img_renames) > 200:
+        print(f"  ... and {len(prev_img_renames) - 200} more")
+    for path, reason in prev_img_skipped:
+        print(f"  [skip] {path}  ({reason})")
+
+    total = len(folder_renames) + len(folder_merges) + len(prev_img_renames)
+    if total == 0:
+        print("\nNothing to do. Everything already looks correct.")
         return
 
-    print("\n--- Preview (dry run) ---")
-    for _, _, label in renames:
-        print(f"  {label}")
-
-    confirm = input(f"\nRename {len(renames)} file(s)? Type 'yes' to proceed: ").strip().lower()
+    confirm = input(
+        f"\nApply changes to {', '.join(exam_folders)}? Type 'yes' to proceed: "
+    ).strip().lower()
     if confirm != "yes":
         print("Aborted. No files changed.")
         return
 
-    done, errors = 0, 0
-    for src, dst, label in renames:
-        try:
-            os.rename(src, dst)
-            done += 1
-        except OSError as e:
-            errors += 1
-            print(f"  [ERROR] {label}  ({e})")
+    # ---- Apply step 1 ----
+    print("\nApplying folder renames...")
+    fdone, mfiles, coll, ferr = apply_folder_renames(folder_renames, folder_merges)
 
-    print(f"\nDone. Renamed {done} file(s), {errors} error(s).")
+    # ---- Re-plan + apply step 2 (paths are canonical now) ----
+    img_renames, _ = plan_image_renames(INPUT_DIR, exam_folders)
+    print("Applying image renames...")
+    idone, ierr = apply_image_renames(img_renames)
+
+    print("\n" + "-" * 40)
+    print(f"Folders renamed : {fdone}")
+    print(f"Folders merged  : {len(folder_merges)}  ({mfiles} files moved, {coll} collisions)")
+    print(f"Images renamed  : {idone}")
+    print(f"Errors          : {ferr + ierr}")
+    print("Done.")
 
 
 if __name__ == "__main__":
