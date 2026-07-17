@@ -178,16 +178,20 @@ def process_single_question(question_id, emit_log, client=None, force=False):
         return False # Already processed or doesn't exist
         
     subject_folder = q['subject_name'].lower().replace(" ", "_")
-    
-    # Try exam-scoped path first, then legacy path
+
+    # Exam-scoped path only. There used to be a fallback to the shared
+    # extracted_frames/<subject>/ folder, but that folder has no exam
+    # dimension: when a session's own image was missing (e.g. an upper-case
+    # subject folder) it silently read ANOTHER session's frame and wrote that
+    # text into this question. Failing loudly is better than storing wrong data.
     img_path = os.path.join(INPUT_DIR, f"exam_{q['exam_id']}", subject_folder, q['image_name'])
-    if not os.path.exists(img_path):
-        img_path = os.path.join(INPUT_DIR, subject_folder, q['image_name'])
-    
+
     emit_log(f"  [AI] Extracting {q['subject_name']} Q{q['question_number']}...")
-    
+
     if not os.path.exists(img_path):
         emit_log(f"  [AI Error] Image not found: {img_path}")
+        emit_log( "  [AI Error] The image must sit in this exam's own folder. "
+                 "Run rename_question_images.py if the subject folder is not lower-case.")
         cursor.close()
         conn.close()
         return False

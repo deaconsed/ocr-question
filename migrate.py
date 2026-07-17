@@ -51,7 +51,8 @@ DATA_NAME = "data.json"
 MANIFEST_NAME = "manifest.txt"
 
 # Tables carried in the bundle (order is informational only).
-EXPORT_TABLES = ("subjects", "users", "exams", "questions", "unidentified_frames")
+EXPORT_TABLES = ("subjects", "users", "exams", "questions", "unidentified_frames",
+                 "verifier_assignments", "verifier_exams")
 
 
 # ─────────────────────────── shared helpers ───────────────────────────
@@ -80,6 +81,55 @@ def _remap_exam_path(path, old, new):
     if not path:
         return path
     return re.sub(rf"exam_{old}(?=[/\\]|$)", f"exam_{new}", path)
+
+
+def _canonical_subject_folder(name):
+    """The exact transform app.py uses to build an image path from a subject."""
+    return name.lower().replace(" ", "_")
+
+
+def _normalize_subject_folders(exam_dir):
+    """Rename subject folders inside `exam_dir` to the canonical form.
+
+    app.py serves images from `subject.lower().replace(" ", "_")`, so a folder
+    named BIOLOGY or "USE OF ENGLISH" 404s on the exam-scoped route and makes
+    the UI fall back to shared, session-agnostic images. Bundles exported from
+    an install with such folders would carry the problem across, so normalise
+    on the way in. Returns the number of folders fixed.
+    """
+    if not os.path.isdir(exam_dir):
+        return 0
+
+    fixed = 0
+    for sub in sorted(os.listdir(exam_dir)):
+        src = os.path.join(exam_dir, sub)
+        if not os.path.isdir(src):
+            continue
+
+        target = _canonical_subject_folder(sub)
+        if sub == target:
+            continue
+
+        dst = os.path.join(exam_dir, target)
+        try:
+            # On a case-insensitive filesystem `dst` "exists" because it is the
+            # same directory; a plain rename still corrects the stored name.
+            if os.path.exists(dst) and not os.path.samefile(src, dst):
+                for fn in os.listdir(src):
+                    s, d = os.path.join(src, fn), os.path.join(dst, fn)
+                    if os.path.exists(d):
+                        print(f"    [collision] {target}/{fn} exists — left in {sub}/")
+                        continue
+                    os.rename(s, d)
+                if not os.listdir(src):
+                    os.rmdir(src)
+            else:
+                os.rename(src, dst)
+            fixed += 1
+        except OSError as e:
+            print(f"    [WARN] could not normalise {sub} -> {target} ({e})")
+
+    return fixed
 
 
 # ─────────────────────────────── export ───────────────────────────────
@@ -161,12 +211,23 @@ def export(args):
         cursor.execute(f"SELECT * FROM `{table}` {where}")
         return cursor.fetchall()
 
+    def fetch_optional(table, where=""):
+        """Like fetch, but tolerates an older source schema without the table."""
+        try:
+            return fetch(table, where)
+        except Exception:
+            print(f"  NOTE: table '{table}' not present here — skipping it.")
+            return []
+
     data = {
         "subjects": fetch("subjects"),
         "users": fetch("users"),
         "exams": fetch("exams", f"WHERE id IN ({id_list})"),
         "questions": fetch("questions", f"WHERE exam_id IN ({id_list})"),
         "unidentified_frames": fetch("unidentified_frames", f"WHERE exam_id IN ({id_list})"),
+        # Verifier assignments are scoped to an exam, so they travel with it.
+        "verifier_assignments": fetch_optional("verifier_assignments", f"WHERE exam_id IN ({id_list})"),
+        "verifier_exams": fetch_optional("verifier_exams", f"WHERE exam_id IN ({id_list})"),
     }
 
     # Pack data + image folders into a single zip.
@@ -299,7 +360,7 @@ def do_import(args):
 
         # Drop images into extracted_frames/, renaming exam_<old> -> exam_<new>.
         img_src = os.path.join(tmp, "images")
-        copied = 0
+        copied = normalised = 0
         if os.path.isdir(img_src):
             os.makedirs(FRAMES_DIR, exist_ok=True)
             for old_id, new_id in exam_map.items():
@@ -311,6 +372,9 @@ def do_import(args):
                     shutil.rmtree(dst)
                 shutil.copytree(src, dst)
                 copied += 1
+                # The bundle preserves whatever folder names the source used;
+                # make them match what app.py actually serves from.
+                normalised += _normalize_subject_folders(dst)
 
         print("\n" + "=" * 60)
         print("  IMPORT COMPLETE")
@@ -318,9 +382,11 @@ def do_import(args):
         print(f"  Exams skipped     : {stats['exams_skipped']} (already present)")
         print(f"  Questions added   : {stats['questions_added']}")
         print(f"  Unidentified added: {stats['uf_added']}")
+        print(f"  Assignments added : {stats['assignments_added']}")
         print(f"  Subjects reused/new: {stats['subjects_reused']}/{stats['subjects_new']}")
         print(f"  Users reused/new   : {stats['users_reused']}/{stats['users_new']}")
         print(f"  Image folders copied: {copied}")
+        print(f"  Subject folders normalised: {normalised}")
         print("=" * 60)
         print("Start the app and verify the exams.")
     finally:
@@ -330,7 +396,8 @@ def do_import(args):
 def _merge(cursor, data):
     """Additive merge with ID remapping. Returns (exam_map, stats)."""
     stats = dict(subjects_reused=0, subjects_new=0, users_reused=0, users_new=0,
-                 exams_added=0, exams_skipped=0, questions_added=0, uf_added=0)
+                 exams_added=0, exams_skipped=0, questions_added=0, uf_added=0,
+                 assignments_added=0)
 
     # Subjects — match by unique name.
     subject_map = {}
@@ -398,6 +465,34 @@ def _merge(cursor, data):
             "image_path": _remap_exam_path(uf.get("image_path"), uf["exam_id"], new_exam),
         })
         stats["uf_added"] += 1
+
+    # Verifier assignments — only for newly added exams. Older bundles won't
+    # carry these keys, hence the .get() defaults.
+    for va in data.get("verifier_assignments", []):
+        if va["exam_id"] not in exam_map:
+            continue
+        uid = user_map.get(va["user_id"])
+        sid = subject_map.get(va["subject_id"])
+        if uid is None or sid is None:
+            continue  # user/subject didn't come across; skip rather than break the FK
+        _insert(cursor, "verifier_assignments", va, {
+            "user_id": uid,
+            "exam_id": exam_map[va["exam_id"]],
+            "subject_id": sid,
+        })
+        stats["assignments_added"] += 1
+
+    for ve in data.get("verifier_exams", []):
+        if ve["exam_id"] not in exam_map:
+            continue
+        uid = user_map.get(ve["user_id"])
+        if uid is None:
+            continue
+        _insert(cursor, "verifier_exams", ve, {
+            "user_id": uid,
+            "exam_id": exam_map[ve["exam_id"]],
+        })
+        stats["assignments_added"] += 1
 
     return exam_map, stats
 

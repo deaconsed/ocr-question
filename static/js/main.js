@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Edit UI Elements
     const btnEditText = document.getElementById('btn-edit-text');
+    const btnRerunAi = document.getElementById('btn-rerun-ai');
     const previewContainer = document.getElementById('preview-container');
     const editContainer = document.getElementById('edit-container');
     const editQuestionTextarea = document.getElementById('edit-question-textarea');
@@ -433,6 +434,7 @@ document.addEventListener('DOMContentLoaded', () => {
             recoveryContainer.style.display = 'flex';
             teacherSection.style.display = 'none';
             btnEditText.style.display = 'none';
+            btnRerunAi.style.display = 'none'; // no row/image yet — nothing to re-run
             btnCompleteQuestion.style.display = 'none';
             recoveryHint.innerHTML = `This question was missed by the automatic extractor.<br><br>Check the video between <strong>${q.prev_timestamp || 'Start'}</strong> and <strong>${q.next_timestamp || 'End'}</strong>.`;
             sourceImage.style.display = 'none';
@@ -454,6 +456,12 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             btnEditText.style.display = 'none';
         }
+
+        // Admin can re-run AI extraction on a question (e.g. one that came back
+        // with no question_text). Costs an API call, so admin only.
+        btnRerunAi.style.display = (userRole === 'admin') ? 'block' : 'none';
+        btnRerunAi.textContent = '🔄 Re-run OCR';
+        btnRerunAi.disabled = false;
 
         // Teacher (and admin) can see "Complete" button.
         if (userRole === 'teacher' || userRole === 'admin') {
@@ -664,6 +672,7 @@ document.addEventListener('DOMContentLoaded', () => {
         imagePlaceholder.textContent = "Source image will appear here...";
         currentQuestionTitle.textContent = 'Select a Subject and Question';
         btnEditText.style.display = 'none';
+        btnRerunAi.style.display = 'none';
         btnCompleteQuestion.style.display = 'none';
         teacherSection.style.display = 'none';
         const gridSection = document.getElementById('question-grid-section');
@@ -678,6 +687,7 @@ document.addEventListener('DOMContentLoaded', () => {
         previewContainer.style.display = 'none';
         editContainer.style.display = 'flex';
         btnEditText.style.display = 'none';
+        btnRerunAi.style.display = 'none';
         if (!easyMDE) {
             easyMDE = new EasyMDE({ 
                 element: editQuestionTextarea,
@@ -733,6 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
         editContainer.style.display = 'none';
         recoveryContainer.style.display = 'none';
         if (userRole === 'verifier' || userRole === 'admin') btnEditText.style.display = 'block';
+        if (userRole === 'admin') btnRerunAi.style.display = 'block';
     }
 
     btnEditText.addEventListener('click', showEditMode);
@@ -859,6 +870,39 @@ document.addEventListener('DOMContentLoaded', () => {
             } else alert("Failed to save crop.");
         })
         .finally(() => { btnSaveCrop.textContent = "Save Crop & Next"; btnSaveCrop.disabled = false; });
+    });
+
+    btnRerunAi.addEventListener('click', () => {
+        const q = questionsData[currentQuestionIndex];
+        if (!q || q.is_missing || !q.id) return;
+
+        if (q.question_text && !confirm(
+            `Question ${q.question_number} already has text. Re-running the AI will overwrite it. Continue?`)) {
+            return;
+        }
+
+        btnRerunAi.textContent = '⏳ Running...';
+        btnRerunAi.disabled = true;
+
+        fetch(`/api/admin/questions/${q.id}/rerun_ai`, { method: 'POST' })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok || !data.success) {
+                    alert('Re-run failed: ' + (data.error || 'unknown error'));
+                    return;
+                }
+                // Update in place — reloading would jump back to question 1.
+                q.question_text = data.question_text;
+                q.options = data.options || {};
+                q.has_image = data.has_image;
+                updatePreview(q);
+                renderQuestionsList();
+            })
+            .catch(() => alert('Network error while re-running the AI.'))
+            .finally(() => {
+                btnRerunAi.textContent = '🔄 Re-run OCR';
+                btnRerunAi.disabled = false;
+            });
     });
 
     btnNext.addEventListener('click', () => { if (currentQuestionIndex < questionsData.length - 1) selectQuestion(currentQuestionIndex + 1); });

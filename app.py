@@ -360,17 +360,16 @@ def serve_image_exam(exam_id, subject, filename):
 
 @app.route("/images/<subject>/<path:filename>")
 def serve_image(subject, filename):
-    """Legacy: serve images from non-exam-scoped directories."""
+    """Legacy: serve images from the shared, non-exam-scoped directory.
+
+    Only for pre-exam_id imports. It must never guess across exam folders:
+    doing so served one session's frame for another session's question.
+    """
     subject_folder = subject.lower().replace(" ", "_")
     subject_dir = os.path.join(INPUT_DIR, subject_folder)
     if os.path.exists(os.path.join(subject_dir, filename)):
+        print(f"[legacy-image] served {subject_folder}/{filename} from the shared folder")
         return send_from_directory(subject_dir, filename)
-    # Try all exam folders as fallback
-    for d in os.listdir(INPUT_DIR):
-        if d.startswith("exam_"):
-            path = os.path.join(INPUT_DIR, d, subject_folder, filename)
-            if os.path.exists(path):
-                return send_from_directory(os.path.join(INPUT_DIR, d, subject_folder), filename)
     return "Image not found", 404
 
 @app.route("/api/crop/<subject>", methods=["POST"])
@@ -1346,6 +1345,78 @@ def admin_resolve_unidentified(uid):
     finally:
         cursor.close()
         conn.close()
+
+
+@app.route("/api/admin/questions/<int:question_id>/rerun_ai", methods=["POST"])
+@admin_required
+def admin_rerun_ai_for_question(question_id):
+    """Re-run GPT extraction for a single question from the dashboard.
+
+    Used when extraction produced no question_text (or bad text). Unlike the
+    unidentified-frame route this runs INLINE rather than via
+    pipeline.extract_one_async, so the admin gets the new text — or the actual
+    reason it failed — in the response instead of having to watch the log.
+    """
+    from gpt_extractor import process_single_question
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"success": False, "error": "Database connection failed"}), 500
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT id FROM questions WHERE id = %s", (question_id,))
+        if not cursor.fetchone():
+            return jsonify({"success": False, "error": "Question not found"}), 404
+    finally:
+        cursor.close()
+        conn.close()
+
+    # process_single_question reports progress/errors through this callback;
+    # keep them so a failure can be explained in the response.
+    logs = []
+    def emit(msg):
+        print(msg)
+        logs.append(str(msg))
+
+    try:
+        # force=True: re-extract even when question_text is already populated.
+        ok = process_single_question(question_id, emit, force=True)
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Extraction failed: {e}",
+                        "log": logs}), 500
+
+    if not ok:
+        detail = logs[-1] if logs else "AI extraction failed."
+        return jsonify({"success": False, "error": detail, "log": logs}), 500
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"success": False, "error": "Database connection failed"}), 500
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("""
+            SELECT question_text, options, has_image
+            FROM questions WHERE id = %s
+        """, (question_id,))
+        row = cursor.fetchone()
+    finally:
+        cursor.close()
+        conn.close()
+
+    try:
+        options = json.loads(row["options"]) if row.get("options") else {}
+    except (TypeError, ValueError):
+        options = {}
+
+    return jsonify({
+        "success": True,
+        "question_id": question_id,
+        "question_text": row["question_text"],
+        "options": options,
+        "has_image": bool(row["has_image"]),
+        "log": logs,
+    })
 
 
 @app.route("/api/admin/unidentified/<int:uid>/run_ai", methods=["POST"])

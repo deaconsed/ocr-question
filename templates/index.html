@@ -161,7 +161,10 @@
                             <span>Extracted Text</span>
                             <span id="question-timestamp" style="font-size: 0.75rem; color: var(--text-muted); background: var(--bg-element); padding: 2px 8px; border-radius: 4px; font-family: monospace;">00:00:00</span>
                         </div>
-                        <button id="btn-edit-text" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem; display: none;">Edit Text</button>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button id="btn-rerun-ai" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem; display: none;" title="Re-run AI extraction on the source image for this question">🔄 Re-run OCR</button>
+                            <button id="btn-edit-text" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem; display: none;">Edit Text</button>
+                        </div>
                     </div>
                     <div class="panel-content" style="position: relative;">
                         <!-- Preview Mode -->

@@ -5,7 +5,9 @@
       "Bash(venv/Scripts/python.exe -c \"import app; rules=[r.rule for r in app.app.url_map.iter_rules\\(\\)]; print\\('lock routes gone:', '/api/lock_question' not in rules and '/api/unlock_question' not in rules\\)\")",
       "Bash(python -c ' *)",
       "Bash(venv/Scripts/python.exe -c ' *)",
-      "Bash(venv/Scripts/python.exe -m py_compile gpt_extractor.py)"
+      "Bash(venv/Scripts/python.exe -m py_compile gpt_extractor.py)",
+      "Bash(python \"C:\\\\Users\\\\HP\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--OCR\\\\91c89dc5-37a5-4837-8238-969ebc59b344\\\\scratchpad\\\\test_rerun.py\")",
+      "Bash(git diff *)"
     ],
     "additionalDirectories": [
       "D:\\OCR"
